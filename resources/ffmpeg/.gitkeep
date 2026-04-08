@@ -1,0 +1,2 @@
+echo "# Placeholder untuk folder FFmpeg" > resources/ffmpeg/.gitkeep
+echo "# Binary tidak di-commit, akan di-download otomatis saat setup" >> resources/ffmpeg/.gitkeep
