@@ -1,4 +1,4 @@
-name: 🚀 Build & Release PRO MAX
+name: 🚀 Build & Publish (Electron Builder)
 
 on:
   push:
@@ -9,11 +9,13 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+
     permissions:
       contents: write
 
     env:
       CI: true
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: 📥 Checkout
@@ -21,7 +23,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 🟢 Setup Node
+      - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -34,93 +36,34 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-npm-
 
-      - name: 📦 Install
-        run: npm ci
+      # 🔥 INSTALL (AUTO FALLBACK)
+      - name: 📦 Install Dependencies
+        run: |
+          if exist package-lock.json (
+            npm ci
+          ) else (
+            npm install
+          )
+        shell: cmd
 
+      # 🔥 FIX NATIVE MODULE (opencv dll)
+      - name: 🧠 Rebuild Native Modules
+        run: npm rebuild
+        shell: cmd
+
+      # 🔥 SETUP FFMPEG
       - name: 🎬 Setup FFmpeg
         run: node scripts/setup-ffmpeg.js || exit /b 1
         shell: cmd
 
-      - name: 🏗️ Build Renderer
-        run: npm run build:renderer
+      # 🔥 BUILD + AUTO UPLOAD KE GITHUB RELEASE
+      - name: 🚀 Build & Publish
+        run: npm run build:win
         shell: cmd
 
-      - name: 🔨 Build Electron
-        run: npm run build:electron
-        shell: cmd
-
-      # 🔥 AUTO DETECT VERSION
-      - name: 🧠 Get Version
-        id: version
+      # 🔍 DEBUG (optional tapi berguna)
+      - name: 🔍 Check Output
         run: |
-          echo VERSION=%GITHUB_REF_NAME% >> %GITHUB_ENV%
+          echo === RELEASE ===
+          dir release\ /s /b 2>nul || echo "No release folder"
         shell: cmd
-
-      # 🔥 AUTO RENAME EXE
-      - name: 📦 Rename EXE
-        run: |
-          for /r %%i in (*.exe) do (
-            echo Found: %%i
-            copy "%%i" "App-Setup-%VERSION%.exe"
-          )
-        shell: cmd
-
-      # 🔥 GENERATE CHANGELOG OTOMATIS
-      - name: 📝 Generate Changelog
-        id: changelog
-        run: |
-          git log -10 --pretty=format:"- %%s" > CHANGELOG.txt
-        shell: cmd
-
-      - name: 📤 Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build
-          path: |
-            App-Setup-*.exe
-            CHANGELOG.txt
-            dist/**/*
-            release/**/*
-            out/**/*
-          if-no-files-found: warn
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: 📥 Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: build
-          path: release/
-
-      - name: 📋 Check Files
-        run: ls -R release/
-
-      # 🔥 READ CHANGELOG
-      - name: 📖 Read Changelog
-        id: changelog
-        run: |
-          echo "CHANGELOG<<EOF" >> $GITHUB_ENV
-          cat release/CHANGELOG.txt >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
-      # 🚀 CREATE RELEASE SUPER RAPI
-      - name: 🚀 Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: release/**/*
-          name: 🚀 Release ${{ github.ref_name }}
-          body: |
-            ## 🔥 What's New
-            ${{ env.CHANGELOG }}
-
-            ---
-            ✅ Auto build by GitHub Actions  
-            ⚡ Version: ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-          fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
