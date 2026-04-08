@@ -1,9 +1,10 @@
-name: Build and Release
+name: 🚀 Build & Release
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*'  # Trigger saat push tag v1.0.0, v1.0.1, dll
+  workflow_dispatch:  # Bisa juga manual trigger
 
 jobs:
   build:
@@ -11,24 +12,118 @@ jobs:
     
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        
+        os: [windows-latest]  # Tambah macos-latest, ubuntu-latest jika mau multi-platform
+      
     steps:
-      - name: Check out Git repository
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Install Node.js
+      - name: 🟢 Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
+          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm install
+      - name: 📦 Install Dependencies
+        run: npm ci
 
-      - name: Build/release Electron app
-        uses: samuelmeuli/action-electron-builder@v1
+      - name: 🔧 Install Dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        run: npm install --save-dev adm-zip
+
+      - name: 🎬 Setup FFmpeg (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          mkdir -p resources/ffmpeg/windows
+          npm run setup:ffmpeg:win
+        shell: bash
+
+      - name: 🎬 Setup FFmpeg (Mac)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install ffmpeg
+          mkdir -p resources/ffmpeg/mac
+          cp $(which ffmpeg) resources/ffmpeg/mac/
+          cp $(which ffprobe) resources/ffmpeg/mac/
+
+      - name: 🎬 Setup FFmpeg (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt update
+          sudo apt install -y ffmpeg
+          mkdir -p resources/ffmpeg/linux
+          cp $(which ffmpeg) resources/ffmpeg/linux/
+          cp $(which ffprobe) resources/ffmpeg/linux/
+
+      - name: 🏗️ Build Application
+        run: |
+          npm run build:renderer
+          npm run build:electron -- --publish=never
+
+      - name: 📤 Upload Artifact (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v3
         with:
-          build_script_name: build:renderer
-          args: --publish always
-          github_token: ${{ secrets.github_token }}
-          release: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          name: windows-build
+          path: release/*.exe
+
+      - name: 📤 Upload Artifact (Mac)
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: mac-build
+          path: release/*.dmg
+
+      - name: 📤 Upload Artifact (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-build
+          path: release/*.AppImage
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: 📥 Download Windows Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: windows-build
+          path: release/windows
+
+      - name: 📝 Create Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            release/windows/*.exe
+          name: Release ${{ github.ref_name }}
+          body: |
+            🎉 **Anz Video Publisher ${{ github.ref_name }}**
+            
+            ### Fitur:
+            - 🤖 AI Video Analysis dengan Gemini
+            - ✂️ Smart Video Splitter (1 jam → 30 short clips)
+            - 🎨 Watermark Remover dengan AI Inpainting
+            - 📝 Auto Caption & Hashtag Generator
+            - 🎯 FYP Score Prediction
+            
+            ### Install:
+            1. Download `.exe` (Windows)
+            2. Install dan jalankan
+            3. Masukkan API Key Gemini di Settings
+            
+            ### Requirements:
+            - Windows 10/11 64-bit
+            - 8GB RAM (minimal)
+            - Koneksi internet (untuk AI)
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
