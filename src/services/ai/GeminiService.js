@@ -66,7 +66,7 @@ class GeminiService {
 
   async analyzeVideo(frames, prompt) {
     return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-pro-vision' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash' });
       
       const imageParts = frames.map(frame => ({
         inlineData: {
@@ -82,7 +82,7 @@ class GeminiService {
 
   async generateCaption(videoAnalysis, context = {}) {
     return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-3.1-pro-preview' });
       
       const strategies = {
         storytelling: 'Use storytelling hook - start with a relatable moment',
@@ -121,7 +121,7 @@ OUTPUT FORMAT:
 
   async generateTitle(videoAnalysis) {
     return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-3.1-pro-preview' });
       
       const prompt = `Generate 5 catchy video titles for this content. 
 Format: Numbered list.
@@ -135,7 +135,7 @@ Make them viral-worthy, use power words, add emoji if appropriate.`;
 
   async generateHashtags(videoAnalysis, count = 15) {
     return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-3.1-pro-preview' });
       
       const prompt = `Generate ${count} relevant hashtags for this video content.
 Mix of: trending, niche-specific, broad reach.
@@ -149,7 +149,7 @@ Video context: ${videoAnalysis}`;
 
   async predictFYPScore(videoAnalysis, metadata) {
     return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-3.1-pro-preview' });
       
       const prompt = `Rate this video's viral potential (FYP score) from 0-100.
 Consider: hook strength, trending potential, engagement factors.
