@@ -269,7 +269,6 @@ ipcMain.handle('select-output-dir', async () => {
 
 // Helper: Generate watermark preview dengan bounding boxes
 async function generateWatermarkPreview(framePath, watermarks) {
-  const cv = require('@u4/opencv4nodejs');
   const img = cv.imread(framePath);
   
   for (const wm of watermarks) {
