@@ -1,5 +1,4 @@
 const GeminiService = require('../ai/GeminiService');
-const cv = require('@u4/opencv4nodejs');
 
 class WatermarkDetector {
   constructor(apiKeys) {
