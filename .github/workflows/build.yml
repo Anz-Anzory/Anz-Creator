@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest  # Langsung windows, tidak perlu matrix
+    runs-on: windows-latest
     
     steps:
       - name: 📥 Checkout Repository
@@ -18,24 +18,38 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          # DISABLE CACHE - tidak perlu lock file
-          cache: 'npm'
-          cache-dependency-path: '**/package.json'  # Use package.json instead
 
       - name: 📦 Install Dependencies
         run: |
           npm install
-          npm install --save-dev adm-zip tar concurrently wait-on
-        shell: cmd
+          npm install --save-dev adm-zip
 
       - name: 🎬 Setup FFmpeg
         run: node scripts/setup-ffmpeg.js
         shell: cmd
 
-      - name: 🏗️ Build Application
+      - name: 🏗️ Build Vite (Renderer)
+        run: npm run build:renderer
+        shell: cmd
+
+      - name: 🔨 Build Electron (Main)
+        run: npm run build:electron
+        shell: cmd
+
+      # DEBUG: Cek folder release ada atau tidak
+      - name: 🔍 Check Release Folder
         run: |
-          npm run build:renderer
-          npm run build:electron -- --publish=never
+          echo "Current directory:"
+          cd
+          echo.
+          echo "Listing release folder:"
+          dir release\ /s /b 2>nul || echo "Release folder not found"
+          echo.
+          echo "Listing dist folder:"
+          dir dist\ /s /b 2>nul || echo "Dist folder not found"
+          echo.
+          echo "Searching for .exe files:"
+          dir *.exe /s /b 2>nul || echo "No .exe found"
         shell: cmd
 
       - name: 📤 Upload Artifact
@@ -43,14 +57,10 @@ jobs:
         with:
           name: windows-build
           path: |
-            release/*.exe
-            release/*.msi
-            release/**/*.exe
-          if-no-files-found: error
-
-      - name: 📋 List Build Output
-        run: dir release\ /s
-        shell: cmd
+            release/**/*
+            dist/*.exe
+            *.exe
+          if-no-files-found: warn
 
   release:
     needs: build
@@ -65,28 +75,18 @@ jobs:
           name: windows-build
           path: release/
 
-      - name: 📋 Verify Download
+      - name: 📋 List Downloaded Files
         run: ls -la release/
 
       - name: 📝 Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: release/**/*.exe
+          files: |
+            release/**/*
+          fail_on_unmatched_files: false
           name: Release ${{ github.ref_name }}
-          body: |
-            🎉 **Anz Video Publisher ${{ github.ref_name }}**
-            
-            ### Fitur:
-            - 🤖 AI Video Analysis dengan Gemini
-            - ✂️ Smart Video Splitter
-            - 🎨 Watermark Remover
-            
-            ### Download & Install:
-            1. Download `.exe` file di bawah
-            2. Install dan jalankan
-            3. Masukkan API Key Gemini di Settings
-          draft: false
+          draft: true  # Jadikan draft dulu biar bisa cek
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
