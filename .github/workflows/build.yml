@@ -1,15 +1,23 @@
-name: 🚀 Build & Publish (Electron Builder)
+name: 🚀 Build & Release
 
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create GitHub Release?'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   build:
     runs-on: windows-latest
-
     permissions:
       contents: write
 
