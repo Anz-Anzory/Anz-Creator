@@ -5,147 +5,123 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create GitHub Release?'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write
     
     steps:
       # ==========================================
-      # 1. Setup Environment
+      # Checkout & Setup
       # ==========================================
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🟢 Setup Node.js
+      - name: 🟢 Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
 
       # ==========================================
-      # 2. Install Dependencies
+      # Dependencies
       # ==========================================
       - name: 📦 Install Dependencies
         run: |
           npm install
-          npm install --save-dev adm-zip
+        shell: cmd
 
-      # ==========================================
-      # 3. Setup FFmpeg
-      # ==========================================
-      - name: 🎬 Setup FFmpeg
-        run: node scripts/setup-ffmpeg.js
+      - name: 📦 Install adm-zip
+        run: npm install --save-dev adm-zip
         shell: cmd
 
       # ==========================================
-      # 4. Build Application
+      # FFmpeg Setup (with retry)
+      # ==========================================
+      - name: 🎬 Setup FFmpeg
+        id: ffmpeg
+        run: node scripts/setup-ffmpeg.js
+        shell: cmd
+        continue-on-error: true
+
+      - name: 🎬 Retry FFmpeg Setup (if failed)
+        if: steps.ffmpeg.outcome == 'failure'
+        run: |
+          echo "Retrying FFmpeg setup..."
+          rmdir /s /q "%TEMP%\ffmpeg-setup" 2>nul
+          node scripts/setup-ffmpeg.js
+        shell: cmd
+
+      # ==========================================
+      # Build
       # ==========================================
       - name: 🏗️ Build Renderer (Vite)
         run: npm run build:renderer
         shell: cmd
 
-      - name: 🔨 Build Electron App
+      - name: 🔨 Build Electron
         run: npm run build:electron
         shell: cmd
         env:
-          # WAJIB: Token untuk publish ke GitHub Releases
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ==========================================
-      # 5. Verify Build Output
+      # Verify Output
       # ==========================================
-      - name: 🔍 Check Build Output
-        if: always()
+      - name: 🔍 Verify Build Output
         run: |
           echo "=========================================="
-          echo "Current Directory:"
-          cd
+          echo "Checking release folder..."
+          dir release\ /s /b 2>nul || echo "No release folder"
           echo.
-          echo "=========================================="
-          echo "Release Folder Contents:"
-          dir release\ /s /b 2>nul || echo "Release folder not found"
-          echo.
-          echo "=========================================="
-          echo "Searching for .exe files:"
-          dir *.exe /s /b 2>nul || echo "No .exe found"
-          echo.
-          echo "=========================================="
-          echo "File sizes:"
-          for %f in (release\*.exe) do @echo %f - %~zf bytes
+          echo "Checking for .exe files..."
+          where /r release *.exe 2>nul || echo "No .exe found"
         shell: cmd
 
       # ==========================================
-      # 6. Upload Artifact (Backup)
+      # Upload Artifact (if no tag)
       # ==========================================
-      - name: 📤 Upload Build Artifact
+      - name: 📤 Upload Artifact
+        if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: windows-exe-build
-          path: |
-            release/*.exe
-            release/*.exe.blockmap
-          if-no-files-found: warn
-          retention-days: 30
+          name: anz-video-publisher-${{ github.run_number }}
+          path: release/*.exe
+          if-no-files-found: error
 
-  # ==========================================
-  # 7. Create GitHub Release
-  # ==========================================
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    
-    steps:
-      - name: 📥 Download Build Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-exe-build
-          path: release/
-
-      - name: 📋 List Downloaded Files
-        run: |
-          echo "Downloaded files:"
-          ls -lah release/
-          echo.
-          echo "File details:"
-          file release/*
-
+      # ==========================================
+      # Create Release (tag push only)
+      # ==========================================
       - name: 📝 Create GitHub Release
-        uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
         with:
-          files: release/*
+          files: |
+            release/*.exe
+            release/*.blockmap
           fail_on_unmatched_files: false
           name: Anz Video Publisher ${{ github.ref_name }}
           body: |
-            ## 🎬 Anz Video Publisher ${{ github.ref_name }}
+            ## 🎬 Release ${{ github.ref_name }}
             
-            ### Downloads
-            - **Installer**: `Anz Video Publisher Setup X.X.X.exe` - Full installation with shortcuts
-            - **Portable**: `Anz Video Publisher X.X.X.exe` - Run without installation
+            ### Files
+            - **Setup**: `Anz Video Publisher Setup *.exe` (Installer)
+            - **Portable**: `Anz Video Publisher *.exe` (No install)
             
-            ### Features
-            ✨ AI-powered viral clip detection
-            🎨 Automatic caption generation
-            🏷️ Smart hashtag suggestions
-            📊 FYP score optimization
-            💧 Watermark removal (AI inpainting)
-            🚀 One-click publish to social media
-            
-            ### System Requirements
-            - Windows 10/11 (64-bit)
-            - 4GB RAM minimum (8GB recommended)
-            - 500MB free disk space
-            
-            ### Installation
-            1. Download the Setup file
-            2. Run the installer
-            3. Launch "Anz Video Publisher" from Start Menu or Desktop
-            
-            **Note**: FFmpeg is bundled automatically - no separate installation needed!
+            ### Requirements
+            - Windows 10/11 x64
+            - 4GB RAM (8GB recommended)
           draft: false
           prerelease: false
         env:
