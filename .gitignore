@@ -1,66 +1,304 @@
-# Dependencies
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
 node_modules/
-npm-debug.log
-yarn-error.log
+.npm/
+.yarn/
 package-lock.json
 yarn.lock
+yarn-error.log
+npm-debug.log*
+pnpm-debug.log*
+.pnpm-store/
 
-# Build outputs
+# =============================================================================
+# BUILD OUTPUTS
+# =============================================================================
 dist/
 release/
 build/
 out/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+.vite/
+dist-ssr/
+*.local
 
-# Environment
+# =============================================================================
+# ELECTRON
+# =============================================================================
+electron-builder.env
+app-update.yml
+
+# =============================================================================
+# ENVIRONMENT & CONFIG
+# =============================================================================
 .env
 .env.local
 .env.*.local
+.env.development
+.env.production
+.env.test
+!.env.example
 
-# IDE/Editor
-.vscode/
+# API Keys & Secrets (CRITICAL - NEVER COMMIT!)
+*apikey*
+*api-key*
+*api_key*
+*.key
+*.pem
+*.cert
+google-credentials.json
+service-account.json
+secrets.json
+config.json
+!config.example.json
+
+# =============================================================================
+# FFMPEG BINARIES (LARGE FILES - AUTO DOWNLOADED)
+# =============================================================================
+resources/ffmpeg/windows/*
+resources/ffmpeg/mac/*
+resources/ffmpeg/linux/*
+!resources/ffmpeg/**/.gitkeep
+
+# FFmpeg archives
+*.zip
+*.tar.xz
+*.tar.gz
+*.7z
+*.rar
+
+# =============================================================================
+# IDE & EDITORS
+# =============================================================================
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.code-workspace
+
+# JetBrains (WebStorm, IntelliJ, etc)
 .idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Sublime
+*.sublime-project
+*.sublime-workspace
+
+# Vim/Neovim
 *.swp
 *.swo
 *~
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# =============================================================================
+# OS SPECIFIC
+# =============================================================================
+# macOS
 .DS_Store
-
-# OS
-Thumbs.db
+.DS_Store?
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Icon?
 ehthumbs.db
-Desktop.ini
+Thumbs.db
 
-# Logs
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.nfs*
+.directory
+.Trash-*
+
+# =============================================================================
+# LOGS & TEMP
+# =============================================================================
 logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+lerna-debug.log*
 
-# Testing
-coverage/
-.nyc_output/
-
-# FFmpeg downloaded binaries (biar repo tidak terlalu besar)
-resources/ffmpeg/windows/
-resources/ffmpeg/mac/
-resources/ffmpeg/linux/
-!resources/ffmpeg/.gitkeep
-
-# Temporary files
+# Temporary folders
 tmp/
 temp/
 *.tmp
 *.temp
+tmp.*
+*.cache
+*.pid
+*.seed
+*.pid.lock
 
-# Cache
-.cache/
-.parcel-cache/
+# Coverage & Testing
+coverage/
+.nyc_output/
+*.lcov
+.eslintcache
+.stylelintcache
+
+# =============================================================================
+# REACT & FRONTEND
+# =============================================================================
+# Production build
+/build
+/dist
+
+# Misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =============================================================================
+# NATIVE MODULES & BINARIES
+# =============================================================================
+# OpenCV build artifacts (if any)
+opencv-build/
+.node-gyp/
+build/Release/
+
+# Prebuilds
+prebuilds/
+*.node
+
+# =============================================================================
+# PROJECT SPECIFIC
+# =============================================================================
+# Video output folder (if generated in project)
+output/
+exports/
+downloads/
+uploads/
+
+# Generated clips (temporary)
+generated-clips/
+temp-frames/
+thumbnails/
+viral-detection/
+video-inpaint/
+video-frames/
+
+# Local data storage
+data/
+local-storage/
+*.db
+*.sqlite
+*.sqlite3
+
+# =============================================================================
+# ALLOW THESE (EXCEPTIONS)
+# =============================================================================
+# Keep folder structure
+!.gitkeep
+!.gitkeep.md
+
+# Keep example configs
+!config.example.json
+!env.example
+
+# Keep documentation
+!README.md
+!LICENSE
+!CONTRIBUTING.md
+!CHANGELOG.md
+
+# =============================================================================
+# MISCELLANEOUS
+# =============================================================================
+# Lock files (choose one based on your package manager)
+# Uncomment if you want to ignore lock files
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# TypeScript
+*.tsbuildinfo
+
+# Optional eslint cache
 .eslintcache
 
-# Electron
-electron-builder.env
+# Optional stylelint cache
+.stylelintcache
 
-# API Keys (jangan pernah commit!)
-*api-keys*
-*apikey*
-*api_key*
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# next.js build output
+.next
+
+# nuxt.js build output
+.nuxt
+
+# vuepress build output
+.vuepress/dist
+
+# Serverless directories
+.serverless/
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
