@@ -3,12 +3,10 @@ const path = require('path');
 const fs = require('fs').promises;
 const KeyStorage = require('./src/services/config/KeyStorage');
 const GeminiService = require('./src/services/ai/GeminiService');
-const VideoProcessor = require('./src/services/video/VideoProcessor');
 const LongVideoProcessor = require('./src/services/pipelines/LongVideoProcessor');
 
 let mainWindow;
 let geminiService;
-let videoProcessor;
 let longVideoProcessor;
 
 function createWindow() {
