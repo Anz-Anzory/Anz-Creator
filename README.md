@@ -28,7 +28,7 @@ AI-powered desktop application for viral video content generation and optimizati
 
 ```bash
 # Clone repository
-git clone https://github.com/username/anz-video-publisher.git
+git clone https://github.com/Anz-Anzory/Anz-Creator/anz-video-publisher.git
 cd anz-video-publisher
 
 # Install dependencies
