@@ -1,4 +1,5 @@
 name: 🚀 Build & Release
+
 on:
   push:
     tags:
@@ -13,12 +14,16 @@ on:
         options:
           - 'true'
           - 'false'
+
 jobs:
   build:
     runs-on: windows-latest
     permissions:
       contents: write
-    
+
+    env:
+      CI: true
+
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
@@ -28,13 +33,22 @@ jobs:
         with:
           node-version: 20
 
+      - name: ⚡ Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
       - name: 📦 Install Dependencies
         run: |
-          npm install
+          npm ci
           npm install --save-dev adm-zip
 
       - name: 🎬 Setup FFmpeg
-        run: node scripts/setup-ffmpeg.js
+        run: |
+          node scripts/setup-ffmpeg.js || exit /b 1
         shell: cmd
 
       - name: 🏗️ Build Vite (Renderer)
@@ -45,20 +59,22 @@ jobs:
         run: npm run build:electron
         shell: cmd
 
-      # DEBUG: Cek folder release ada atau tidak
-      - name: 🔍 Check Release Folder
+      - name: 🔍 Debug Build Output
         run: |
-          echo "Current directory:"
-          cd
+          echo Current directory:
+          echo %cd%
           echo.
-          echo "Listing release folder:"
-          dir release\ /s /b 2>nul || echo "Release folder not found"
+          echo === RELEASE FOLDER ===
+          dir release\ /s /b 2>nul || echo "No release folder"
           echo.
-          echo "Listing dist folder:"
-          dir dist\ /s /b 2>nul || echo "Dist folder not found"
+          echo === DIST FOLDER ===
+          dir dist\ /s /b 2>nul || echo "No dist folder"
           echo.
-          echo "Searching for .exe files:"
-          dir *.exe /s /b 2>nul || echo "No .exe found"
+          echo === OUT FOLDER ===
+          dir out\ /s /b 2>nul || echo "No out folder"
+          echo.
+          echo === EXE FILES ===
+          dir *.exe /s /b 2>nul || echo "No exe found"
         shell: cmd
 
       - name: 📤 Upload Artifact
@@ -67,7 +83,8 @@ jobs:
           name: windows-build
           path: |
             release/**/*
-            dist/*.exe
+            dist/**/*
+            out/**/*
             *.exe
           if-no-files-found: warn
 
@@ -76,7 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
       - name: 📥 Download Artifact
         uses: actions/download-artifact@v4
@@ -85,17 +102,16 @@ jobs:
           path: release/
 
       - name: 📋 List Downloaded Files
-        run: ls -la release/
+        run: ls -R release/
 
       - name: 📝 Create Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
         with:
-          files: |
-            release/**/*
-          fail_on_unmatched_files: false
-          name: Release ${{ github.ref_name }}
-          draft: true  # Jadikan draft dulu biar bisa cek
+          files: release/**/*
+          fail_on_unmatched_files: true
+          name: 🚀 Release ${{ github.ref_name }}
+          draft: true
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
