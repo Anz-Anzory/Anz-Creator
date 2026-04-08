@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const KeyStorage = require('./src/services/config/KeyStorage');
 const GeminiService = require('./src/services/ai/GeminiService');
+const { processVideo } = require('./src/services/watermarkRemover');
 const LongVideoProcessor = require('./src/services/pipelines/LongVideoProcessor');
 
 let mainWindow;
