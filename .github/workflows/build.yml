@@ -1,8 +1,5 @@
 name: 🚀 Build & Release
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # Fix Node.js 20 deprecation warning
-
 on:
   push:
     tags:
@@ -11,12 +8,8 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest  # Langsung windows, tidak perlu matrix
     
-    strategy:
-      matrix:
-        os: [windows-latest]
-      
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
@@ -24,33 +17,26 @@ jobs:
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20  # Update to 20 (GitHub akan otomatis migrate ke 24 nanti)
+          node-version: 20
+          # DISABLE CACHE - tidak perlu lock file
           cache: 'npm'
-          # Jangan cache jika tidak ada lock file
-          cache-dependency-path: '**/package-lock.json'
+          cache-dependency-path: '**/package.json'  # Use package.json instead
 
-      # FIX: Generate lock file jika tidak ada, lalu install
       - name: 📦 Install Dependencies
         run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-            npm install --save-dev adm-zip tar
-          fi
-        shell: bash
+          npm install
+          npm install --save-dev adm-zip tar concurrently wait-on
+        shell: cmd
 
       - name: 🎬 Setup FFmpeg
-        run: |
-          mkdir -p resources/ffmpeg/windows
-          node scripts/setup-ffmpeg.js
-        shell: bash
+        run: node scripts/setup-ffmpeg.js
+        shell: cmd
 
       - name: 🏗️ Build Application
         run: |
           npm run build:renderer
           npm run build:electron -- --publish=never
-        shell: bash
+        shell: cmd
 
       - name: 📤 Upload Artifact
         uses: actions/upload-artifact@v4
@@ -59,13 +45,12 @@ jobs:
           path: |
             release/*.exe
             release/*.msi
-          if-no-files-found: warn
+            release/**/*.exe
+          if-no-files-found: error
 
       - name: 📋 List Build Output
-        run: |
-          echo "Contents of release folder:"
-          ls -la release/
-        shell: bash
+        run: dir release\ /s
+        shell: cmd
 
   release:
     needs: build
@@ -74,9 +59,6 @@ jobs:
       contents: write
     
     steps:
-      - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
-
       - name: 📥 Download Artifact
         uses: actions/download-artifact@v4
         with:
@@ -84,48 +66,27 @@ jobs:
           path: release/
 
       - name: 📋 Verify Download
-        run: |
-          echo "Downloaded files:"
-          ls -la release/
-        shell: bash
+        run: ls -la release/
 
       - name: 📝 Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: |
-            release/*.exe
-            release/*.msi
-            release/*.zip
+          files: release/**/*.exe
           name: Release ${{ github.ref_name }}
           body: |
             🎉 **Anz Video Publisher ${{ github.ref_name }}**
             
             ### Fitur:
             - 🤖 AI Video Analysis dengan Gemini
-            - ✂️ Smart Video Splitter (1 jam → 30 short clips)
-            - 🎨 Watermark Remover dengan AI Inpainting
-            - 📝 Auto Caption & Hashtag Generator
-            - 🎯 FYP Score Prediction
+            - ✂️ Smart Video Splitter
+            - 🎨 Watermark Remover
             
-            ### System Requirements:
-            - Windows 10/11 64-bit
-            - 8GB RAM (minimal)
-            - Koneksi internet untuk AI
-            
-            ### Cara Install:
-            1. Download file `.exe` di bawah
-            2. Jalankan installer
-            3. Tunggu instalasi selesai
-            4. Buka aplikasi dan masukkan API Key Gemini di Settings
-            
-            ### API Key:
-            Dapatkan free API Key dari: https://aistudio.google.com/app/apikey
-            
-            ### Note:
-            Aplikasi ini membutuhkan FFmpeg yang akan di-download otomatis saat pertama kali running.
+            ### Download & Install:
+            1. Download `.exe` file di bawah
+            2. Install dan jalankan
+            3. Masukkan API Key Gemini di Settings
           draft: false
           prerelease: false
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
