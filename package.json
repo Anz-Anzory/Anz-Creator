@@ -75,9 +75,6 @@
       "src/services/**/*",
       "src/main/**/*",
       "resources/ffmpeg/**/*",
-      "node_modules/@u4/opencv4nodejs/**/*",
-      "node_modules/fluent-ffmpeg/**/*",
-      "node_modules/@google/generative-ai/**/*",
       "package.json"
     ],
     "extraResources": [
