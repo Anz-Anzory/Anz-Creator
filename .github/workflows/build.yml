@@ -11,6 +11,9 @@ jobs:
     runs-on: windows-latest
     
     steps:
+      # ==========================================
+      # 1. Setup Environment
+      # ==========================================
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
@@ -18,50 +21,77 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
+      # ==========================================
+      # 2. Install Dependencies
+      # ==========================================
       - name: 📦 Install Dependencies
         run: |
           npm install
           npm install --save-dev adm-zip
 
+      # ==========================================
+      # 3. Setup FFmpeg
+      # ==========================================
       - name: 🎬 Setup FFmpeg
         run: node scripts/setup-ffmpeg.js
         shell: cmd
 
-      - name: 🏗️ Build Vite (Renderer)
+      # ==========================================
+      # 4. Build Application
+      # ==========================================
+      - name: 🏗️ Build Renderer (Vite)
         run: npm run build:renderer
         shell: cmd
 
-      - name: 🔨 Build Electron (Main)
+      - name: 🔨 Build Electron App
         run: npm run build:electron
         shell: cmd
+        env:
+          # WAJIB: Token untuk publish ke GitHub Releases
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # DEBUG: Cek folder release ada atau tidak
-      - name: 🔍 Check Release Folder
+      # ==========================================
+      # 5. Verify Build Output
+      # ==========================================
+      - name: 🔍 Check Build Output
+        if: always()
         run: |
-          echo "Current directory:"
+          echo "=========================================="
+          echo "Current Directory:"
           cd
           echo.
-          echo "Listing release folder:"
+          echo "=========================================="
+          echo "Release Folder Contents:"
           dir release\ /s /b 2>nul || echo "Release folder not found"
           echo.
-          echo "Listing dist folder:"
-          dir dist\ /s /b 2>nul || echo "Dist folder not found"
-          echo.
+          echo "=========================================="
           echo "Searching for .exe files:"
           dir *.exe /s /b 2>nul || echo "No .exe found"
+          echo.
+          echo "=========================================="
+          echo "File sizes:"
+          for %f in (release\*.exe) do @echo %f - %~zf bytes
         shell: cmd
 
-      - name: 📤 Upload Artifact
+      # ==========================================
+      # 6. Upload Artifact (Backup)
+      # ==========================================
+      - name: 📤 Upload Build Artifact
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: windows-build
+          name: windows-exe-build
           path: |
-            release/**/*
-            dist/*.exe
-            *.exe
+            release/*.exe
+            release/*.exe.blockmap
           if-no-files-found: warn
+          retention-days: 30
 
+  # ==========================================
+  # 7. Create GitHub Release
+  # ==========================================
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -69,24 +99,54 @@ jobs:
       contents: write
     
     steps:
-      - name: 📥 Download Artifact
+      - name: 📥 Download Build Artifact
         uses: actions/download-artifact@v4
         with:
-          name: windows-build
+          name: windows-exe-build
           path: release/
 
       - name: 📋 List Downloaded Files
-        run: ls -la release/
+        run: |
+          echo "Downloaded files:"
+          ls -lah release/
+          echo.
+          echo "File details:"
+          file release/*
 
-      - name: 📝 Create Release
-        uses: softprops/action-gh-release@v2
+      - name: 📝 Create GitHub Release
+        uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: |
-            release/**/*
+          files: release/*
           fail_on_unmatched_files: false
-          name: Release ${{ github.ref_name }}
-          draft: true  # Jadikan draft dulu biar bisa cek
+          name: Anz Video Publisher ${{ github.ref_name }}
+          body: |
+            ## 🎬 Anz Video Publisher ${{ github.ref_name }}
+            
+            ### Downloads
+            - **Installer**: `Anz Video Publisher Setup X.X.X.exe` - Full installation with shortcuts
+            - **Portable**: `Anz Video Publisher X.X.X.exe` - Run without installation
+            
+            ### Features
+            ✨ AI-powered viral clip detection
+            🎨 Automatic caption generation
+            🏷️ Smart hashtag suggestions
+            📊 FYP score optimization
+            💧 Watermark removal (AI inpainting)
+            🚀 One-click publish to social media
+            
+            ### System Requirements
+            - Windows 10/11 (64-bit)
+            - 4GB RAM minimum (8GB recommended)
+            - 500MB free disk space
+            
+            ### Installation
+            1. Download the Setup file
+            2. Run the installer
+            3. Launch "Anz Video Publisher" from Start Menu or Desktop
+            
+            **Note**: FFmpeg is bundled automatically - no separate installation needed!
+          draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
