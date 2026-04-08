@@ -8,8 +8,7 @@ export default defineConfig({
   base: './',
   build: {
     outDir: 'dist',
-    emptyOutDir: true,
-    sourcemap: true
+    emptyOutDir: true
   },
   resolve: {
     alias: {
@@ -17,8 +16,7 @@ export default defineConfig({
     }
   },
   server: {
-    port: 5173,
-    strictPort: true
+    port: 5173
   }
 });
 ```__
