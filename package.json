@@ -95,7 +95,8 @@
     "asar": true,
     "asarUnpack": [
       "resources/ffmpeg/**/*",
-      "node_modules/@u4/opencv4nodejs/**/*"
+      "node_modules/@u4/opencv4nodejs/**/*",
+      "node_modules/@u4/opencv-build/**/*"
     ],
     "win": {
       "target": [
