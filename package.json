@@ -22,7 +22,7 @@
     "setup:ffmpeg:mac": "node scripts/setup-ffmpeg.js",
     "setup:ffmpeg:linux": "node scripts/setup-ffmpeg.js",
     "verify:ffmpeg": "node scripts/check-ffmpeg.js",
-    "postinstall": "electron-builder install-app-deps",
+    "postinstall": "electron-builder install-app-deps && opencv-build",
     "test": "jest",
     "lint": "eslint src --ext .js,.jsx",
     "lint:fix": "eslint src --ext .js,.jsx --fix",
