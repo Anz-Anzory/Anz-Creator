@@ -4,12 +4,14 @@
 node_modules/
 .npm/
 .yarn/
-package-lock.json
-yarn.lock
+yarn.lock              # ← YARN di-ignore
 yarn-error.log
 npm-debug.log*
 pnpm-debug.log*
 .pnpm-store/
+
+# ⚠️ JANGAN IGNORE package-lock.json (dibutuhkan CI/CD)
+# package-lock.json    ← PASTIKAN INI DI-HAPUS ATAU DI-COMMENT!
 
 # =============================================================================
 # BUILD OUTPUTS
@@ -74,40 +76,29 @@ resources/ffmpeg/linux/*
 # =============================================================================
 # IDE & EDITORS
 # =============================================================================
-# VS Code
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 *.code-workspace
-
-# JetBrains (WebStorm, IntelliJ, etc)
 .idea/
 *.iml
 *.iws
 *.ipr
 out/
-
-# Sublime
 *.sublime-project
 *.sublime-workspace
-
-# Vim/Neovim
 *.swp
 *.swo
 *~
 .netrwhist
-
-# Emacs
-*~
 \#*\#
 .\#*
 
 # =============================================================================
 # OS SPECIFIC
 # =============================================================================
-# macOS
 .DS_Store
 .DS_Store?
 .AppleDouble
@@ -118,18 +109,12 @@ out/
 Icon?
 ehthumbs.db
 Thumbs.db
-
-# Windows
-Thumbs.db
 Thumbs.db:encryptable
-ehthumbs.db
 ehthumbs_vista.db
 *.stackdump
 [Dd]esktop.ini
 $RECYCLE.BIN/
 *.lnk
-
-# Linux
 *~
 .nfs*
 .directory
@@ -144,8 +129,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
-
-# Temporary folders
 tmp/
 temp/
 *.tmp
@@ -155,8 +138,6 @@ tmp.*
 *.pid
 *.seed
 *.pid.lock
-
-# Coverage & Testing
 coverage/
 .nyc_output/
 *.lcov
@@ -166,52 +147,31 @@ coverage/
 # =============================================================================
 # REACT & FRONTEND
 # =============================================================================
-# Production build
 /build
 /dist
-
-# Misc
-.DS_Store
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
 # =============================================================================
 # NATIVE MODULES & BINARIES
 # =============================================================================
-# OpenCV build artifacts (if any)
 opencv-build/
 .node-gyp/
 build/Release/
-
-# Prebuilds
 prebuilds/
 *.node
 
 # =============================================================================
 # PROJECT SPECIFIC
 # =============================================================================
-# Video output folder (if generated in project)
 output/
 exports/
 downloads/
 uploads/
-
-# Generated clips (temporary)
 generated-clips/
 temp-frames/
 thumbnails/
 viral-detection/
 video-inpaint/
 video-frames/
-
-# Local data storage
 data/
 local-storage/
 *.db
@@ -221,84 +181,11 @@ local-storage/
 # =============================================================================
 # ALLOW THESE (EXCEPTIONS)
 # =============================================================================
-# Keep folder structure
 !.gitkeep
 !.gitkeep.md
-
-# Keep example configs
 !config.example.json
 !env.example
-
-# Keep documentation
 !README.md
 !LICENSE
 !CONTRIBUTING.md
 !CHANGELOG.md
-
-# =============================================================================
-# MISCELLANEOUS
-# =============================================================================
-# Lock files (choose one based on your package manager)
-# Uncomment if you want to ignore lock files
-# package-lock.json
-# yarn.lock
-# pnpm-lock.yaml
-
-# TypeScript
-*.tsbuildinfo
-
-# Optional eslint cache
-.eslintcache
-
-# Optional stylelint cache
-.stylelintcache
-
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
-
-# next.js build output
-.next
-
-# nuxt.js build output
-.nuxt
-
-# vuepress build output
-.vuepress/dist
-
-# Serverless directories
-.serverless/
-
-# FuseBox cache
-.fusebox/
-
-# DynamoDB Local files
-.dynamodb/
-
-# TernJS port file
-.tern-port
-
-# Stores VSCode versions used for testing VSCode extensions
-.vscode-test
-
-# yarn v2
-.yarn/cache
-.yarn/unplugged
-.yarn/build-state.yml
-.yarn/install-state.gz
-.pnp.*
