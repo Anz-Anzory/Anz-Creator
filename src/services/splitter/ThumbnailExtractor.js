@@ -1,5 +1,4 @@
 const ffmpeg = require('fluent-ffmpeg');
-const cv = require('@u4/opencv4nodejs');
 const fs = require('fs').promises;
 const path = require('path');
 
