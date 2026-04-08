@@ -209,10 +209,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/Anz-Anzory/Anz-Creator/Anz-Video-Publisher.git"
+    "url": "https://github.com/Anz-Anzory/Anz-Creator.git"
   },
   "bugs": {
-    "url": "https://github.com/Anz-Anzory/Anz-Creator/Anz-Video-Publisher/issues"
+    "url": "https://github.com/Anz-Anzory/Anz-Creator/issues"
   },
-  "homepage": "https://github.com/Anz-Anzory/Anz-Creator/Anz-Video-Publisher#readme"
+  "homepage": "https://github.com/Anz-Anzory/Anz-Creator#readme"
 }
