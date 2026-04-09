@@ -9,17 +9,20 @@ const { detectWatermark } = require("./detector");
 const { trackWatermark } = require("./tracker");
 const { watermarkList, settings } = require("./config");
 const tempBasePath = path.join(os.tmpdir(), 'anz-video-temp');
-if (!fs.existsSync(tempBasePath)) {
-  fs.mkdirSync(tempBasePath, { recursive: true });
-}
-
-const framesDir = path.join(tempBasePath, "frames");
-const croppedDir = path.join(tempBasePath, "cropped");
-const cleanDir = path.join(tempBasePath, "clean");
-const finalDir = path.join(tempBasePath, "frames_clean");
 
 async function processVideo(inputVideo) {
   console.log("🚀 Start processing...");
+
+  // FIX: Hapus direktori temp secara menyeluruh (jika sudah ada) dari eksekusi sebelumnya
+  if (fs.existsSync(tempBasePath)) {
+    fs.rmSync(tempBasePath, { recursive: true, force: true });
+  }
+  fs.mkdirSync(tempBasePath, { recursive: true });
+
+  const framesDir = path.join(tempBasePath, "frames");
+  const croppedDir = path.join(tempBasePath, "cropped");
+  const cleanDir = path.join(tempBasePath, "clean");
+  const finalDir = path.join(tempBasePath, "frames_clean");
 
   // buat folder
   [framesDir, croppedDir, cleanDir, finalDir].forEach(dir => {
@@ -29,7 +32,12 @@ async function processVideo(inputVideo) {
   // extract frame
   extractFrames(inputVideo);
 
-  const files = fs.readdirSync(framesDir).sort();
+  // FIX: Pengurutan frame menggunakan Regex Parsing agar terbaca secara numerik
+  const files = fs.readdirSync(framesDir).sort((a, b) => {
+    const numA = parseInt(a.match(/\d+/) || [0], 10);
+    const numB = parseInt(b.match(/\d+/) || [0], 10);
+    return numA - numB;
+  });
 
   let detectedAreas = [];
 
@@ -46,9 +54,7 @@ async function processVideo(inputVideo) {
         return detectWatermark(framePath, wm.template);
       });
     } else {
-      detectedAreas = detectedAreas.map(area =>
-        trackWatermark(area, i)
-      );
+      detectedAreas = detectedAreas.map(area => trackWatermark(area, i));
     }
 
     let currentFramePath = framePath;
