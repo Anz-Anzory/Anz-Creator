@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// FIX: Daftar whitelist saluran IPC yang diizinkan untuk keamanan Context Isolation
+// FIX: Tambahkan 'split-progress' ke dalam array ini
 const validChannels = [
   'save-api-keys',
   'get-key-status',
@@ -10,7 +10,8 @@ const validChannels = [
   'remove-watermark',
   'split-long-video',
   'get-video-info',
-  'select-output-dir'
+  'select-output-dir',
+  'split-progress' // <--- TAMBAHKAN INI
 ];
 
 contextBridge.exposeInMainWorld('electron', {
