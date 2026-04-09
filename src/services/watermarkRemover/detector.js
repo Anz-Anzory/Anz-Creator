@@ -1,6 +1,6 @@
-import fs from "fs";
-import { PNG } from "pngjs";
-import pixelmatch from "pixelmatch";
+const fs = require("fs");
+const { PNG } = require("pngjs");
+const pixelmatch = require("pixelmatch");
 
 export function detectWatermark(framePath, templatePath) {
   const img = PNG.sync.read(fs.readFileSync(framePath));

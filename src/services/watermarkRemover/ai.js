@@ -1,21 +1,25 @@
-import Replicate from "replicate";
-import fs from "fs";
+const Replicate = require("replicate");
+const fs = require("fs");
 
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
 
-export async function inpaint(imagePath, maskPath) {
+async function inpaint(imagePath, maskPath) {
   const output = await replicate.run(
     "stability-ai/stable-diffusion-inpainting",
     {
       input: {
         image: fs.createReadStream(imagePath),
         mask: fs.createReadStream(maskPath),
-        prompt: "clean background without watermark"
+        prompt: "remove watermark clean background"
       }
     }
   );
 
-  return output[0]; // URL hasil
+  return output[0];
 }
+
+module.exports = {
+  inpaint
+};

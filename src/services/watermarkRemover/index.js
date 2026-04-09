@@ -1,27 +1,27 @@
-import fs from "fs";
-import path from "path";
-import fetch from "node-fetch";
+const fs = require("fs");
+const path = require("path");
+const fetch = require("node-fetch");
 
-import { extractFrames, cropWatermark, overlayBack, buildVideo } from "./ffmpeg.js";
-import { inpaint } from "./ai.js";
-import { detectWatermark } from "./detector.js";
-import { trackWatermark } from "./tracker.js";
-import { watermarkList, settings } from "./config.js";
+const { extractFrames, cropWatermark, overlayBack, buildVideo } = require("./ffmpeg");
+const { inpaint } = require("./ai");
+const { detectWatermark } = require("./detector");
+const { trackWatermark } = require("./tracker");
+const { watermarkList, settings } = require("./config");
 
 const framesDir = "frames";
 const croppedDir = "cropped";
 const cleanDir = "clean";
 const finalDir = "frames_clean";
 
-export async function processVideo(inputVideo) {
+async function processVideo(inputVideo) {
   console.log("🚀 Start processing...");
 
-  // ensure folder
+  // buat folder
   [framesDir, croppedDir, cleanDir, finalDir].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir);
   });
 
-  // 1. extract frames
+  // extract frame
   extractFrames(inputVideo);
 
   const files = fs.readdirSync(framesDir).sort();
@@ -34,14 +34,13 @@ export async function processVideo(inputVideo) {
 
     console.log(`🎬 Frame ${i + 1}/${files.length}`);
 
-    // 🔥 DETECT (FIRST FRAME ONLY)
+    // detect hanya di frame pertama
     if (i === 0) {
       detectedAreas = watermarkList.map(wm => {
         console.log(`🔍 Detecting: ${wm.name}`);
         return detectWatermark(framePath, wm.template);
       });
     } else {
-      // tracking
       detectedAreas = detectedAreas.map(area =>
         trackWatermark(area, i)
       );
@@ -49,7 +48,7 @@ export async function processVideo(inputVideo) {
 
     let currentFramePath = framePath;
 
-    // 🔥 LOOP MULTI WATERMARK
+    // multi watermark loop
     for (let w = 0; w < detectedAreas.length; w++) {
       const area = detectedAreas[w];
 
@@ -57,30 +56,29 @@ export async function processVideo(inputVideo) {
       const cleanedPath = path.join(cleanDir, `${w}_${frame}`);
       const outputPath = path.join(finalDir, `${w}_${frame}`);
 
-      // skip frame (hemat API)
+      // skip frame biar hemat API
       if (i % settings.processEveryNFrame !== 0) {
         continue;
       }
 
-      // 2. crop watermark area
+      // crop
       cropWatermark(currentFramePath, cropPath, area);
 
-      // 3. AI inpainting
+      // AI inpaint
       const resultUrl = await inpaint(cropPath, cropPath);
 
-      // download hasil AI
+      // download hasil
       const res = await fetch(resultUrl);
       const buffer = await res.arrayBuffer();
       fs.writeFileSync(cleanedPath, Buffer.from(buffer));
 
-      // 4. overlay balik
+      // overlay balik
       overlayBack(currentFramePath, cleanedPath, outputPath, area);
 
-      // update frame untuk watermark berikutnya
       currentFramePath = outputPath;
     }
 
-    // kalau tidak diproses (skip frame)
+    // kalau frame tidak diproses
     const finalFrame = path.join(finalDir, frame);
 
     if (!fs.existsSync(finalFrame)) {
@@ -88,8 +86,12 @@ export async function processVideo(inputVideo) {
     }
   }
 
-  // 5. build video
+  // build video
   buildVideo();
 
   console.log("✅ DONE: output.mp4");
 }
+
+module.exports = {
+  processVideo
+};
