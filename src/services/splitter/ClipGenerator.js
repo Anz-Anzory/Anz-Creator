@@ -23,7 +23,17 @@ class ClipGenerator {
       console.log(`\nProcessing clip ${i + 1}/${clipPlan.length} (FYP: ${plan.fypScore})`);
       
       try {
-        const clipPath = await this.extractClip(videoPath, plan, i + 1);
+        // FIX: Kirim data sub-percent ke UI secara Realtime
+        const clipPath = await this.extractClip(videoPath, plan, i + 1, (percent) => {
+          if (options.onProgress) {
+            options.onProgress({
+              current: i + 1,
+              total: clipPlan.length,
+              subPercent: percent, // Metrik realtime
+              taskName: `Memotong Video ${i + 1}/${clipPlan.length} (${Math.round(percent)}%)`
+            });
+          }
+        });
         const metadata = await this.generateMetadata(clipPath, plan);
         const thumbnails = await this.thumbnailExtractor.extractThumbnails(clipPath, plan, { count: 3 });
         const finalFYPScore = await this.calculateFinalFYPScore(plan, metadata);
@@ -72,27 +82,25 @@ class ClipGenerator {
     return generatedClips;
   }
 
-  async extractClip(videoPath, plan, sequence) {
-    const outputPath = path.join(
-      this.outputDir, 
-      `clip-${String(sequence).padStart(3, '0')}-fyp${plan.fypScore}.mp4`
-    );
+  // Tambahkan parameter onProgressCallback
+  async extractClip(videoPath, plan, sequence, onProgressCallback) {
+    const outputPath = path.join(this.outputDir, `clip-${String(sequence).padStart(3, '0')}-fyp${plan.fypScore}.mp4`);
     
     return new Promise((resolve, reject) => {
       ffmpeg(videoPath)
         .setStartTime(plan.start)
         .setDuration(plan.duration)
         .outputOptions([
-          '-c:v libx264',
-          '-c:a aac',
-          '-strict experimental',
-          '-b:a 192k',
-          '-crf 23',
-          '-preset fast',
-          '-movflags +faststart',
-          // FIX: Filter ini akan memaksa lebar (iw) dan tinggi (ih) menjadi angka genap agar libx264 tidak crash
+          '-c:v libx264', '-c:a aac', '-strict experimental', '-b:a 192k',
+          '-crf 23', '-preset fast', '-movflags +faststart',
           '-vf scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p'
         ])
+        // FIX: Tangkap event progress Real-Time dari FFMPEG
+        .on('progress', (progress) => {
+          if (progress.percent && onProgressCallback) {
+            onProgressCallback(progress.percent); // kirim nilai 0-100
+          }
+        })
         .output(outputPath)
         .on('end', () => resolve(outputPath))
         .on('error', reject)
