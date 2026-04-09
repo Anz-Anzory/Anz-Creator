@@ -110,8 +110,8 @@ class VideoAnalyzer {
 
     const audioData = await fs.readFile(audioPath, { encoding: 'base64' });
     
-    const transcription = await this.gemini.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+    const transcription = await this.gemini.executeWithRotation(async (genAI, modelName) => {
+      const model = genAI.getGenerativeModel({ model: modelName });
       
       const result = await model.generateContent([
         'Transcribe this audio and summarize the main points:',
