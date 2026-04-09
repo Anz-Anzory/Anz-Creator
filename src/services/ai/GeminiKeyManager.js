@@ -46,7 +46,7 @@ class GeminiKeyManager {
   }
 
   rotateKey() {
-    this.failedKeys.add(this.currentIndex);
+    // FIX: Dihapus this.failedKeys.add() agar API Key tidak dibanned permanen saat antre
     this.currentIndex = (this.currentIndex + 1) % this.apiKeys.length;
     console.log(`Rotated to key index: ${this.currentIndex}`);
     return this.getCurrentKey();
