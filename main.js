@@ -19,9 +19,6 @@ let geminiService
 let videoProcessor
 let longVideoProcessor
 
-// ==========================
-// GLOBAL ERROR HANDLER
-// ==========================
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT ERROR:', err)
 })
@@ -30,9 +27,6 @@ process.on('unhandledRejection', (err) => {
   console.error('UNHANDLED REJECTION:', err)
 })
 
-// ==========================
-// CREATE WINDOW
-// ==========================
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -70,9 +64,6 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })
 
-// ==========================
-// INIT SERVICES
-// ==========================
 async function initializeServices() {
   const keyStorage = new KeyStorage()
   const apiKeys = await keyStorage.loadKeys()
@@ -86,22 +77,12 @@ async function initializeServices() {
   return false
 }
 
-// ==========================
-// IPC HANDLERS
-// ==========================
-
 ipcMain.handle('save-api-keys', async (event, keysArray) => {
   try {
     const keyStorage = new KeyStorage()
     await keyStorage.saveKeys(keysArray)
-
     const initialized = await initializeServices()
-
-    return {
-      success: true,
-      initialized,
-      keyCount: keysArray.length
-    }
+    return { success: true, initialized, keyCount: keysArray.length }
   } catch (error) {
     return { success: false, error: error.message }
   }
@@ -111,11 +92,7 @@ ipcMain.handle('get-key-status', async () => {
   try {
     const keyStorage = new KeyStorage()
     const keys = await keyStorage.loadKeys()
-    return {
-      success: true,
-      count: keys.length,
-      hasKeys: keys.length > 0
-    }
+    return { success: true, count: keys.length, hasKeys: keys.length > 0 }
   } catch (error) {
     return { success: false, error: error.message }
   }
@@ -129,7 +106,6 @@ ipcMain.handle('get-gemini-stats', () => {
 ipcMain.handle('analyze-video', async (event, { videoPath, settings }) => {
   try {
     if (!geminiService) await initializeServices()
-
     const VideoAnalyzerClass = require('./src/services/ai/VideoAnalyzer')
     const analyzer = new VideoAnalyzerClass(geminiService.apiKeys || [])
 
@@ -138,21 +114,16 @@ ipcMain.handle('analyze-video', async (event, { videoPath, settings }) => {
       audience: settings.audience || 'general',
       transcribeAudio: settings.transcribeAudio !== false
     })
-
     return { success: true, data: results }
   } catch (error) {
     return { success: false, error: error.message }
   }
 })
 
-// ==========================
-// WATERMARK DETECT (FIXED)
-// ==========================
 ipcMain.handle('detect-watermark', async (event, { videoPath, options = {} }) => {
   try {
     if (!videoProcessor) await initializeServices()
-
-    const WatermarkDetector = require('./src/services/watermarkRemover/detector') // Sesuaikan dengan nama file asli di folder Anda
+    const WatermarkDetector = require('./src/services/watermarkRemover/detector') 
     const detector = new WatermarkDetector(geminiService.apiKeys)
 
     const tempDir = require('os').tmpdir()
@@ -171,7 +142,6 @@ ipcMain.handle('detect-watermark', async (event, { videoPath, options = {} }) =>
     })
 
     const base64 = await fs.readFile(framePath, { encoding: 'base64' })
-
     const detection = await detector.detect(base64, framePath, {
       useAI: options.useAI !== false,
       useHeuristics: options.useHeuristics !== false,
@@ -180,47 +150,34 @@ ipcMain.handle('detect-watermark', async (event, { videoPath, options = {} }) =>
 
     await fs.unlink(framePath)
 
-    return {
-      success: true,
-      hasWatermark: detection.hasWatermark,
-      watermarks: detection.watermarks
-    }
+    return { success: true, hasWatermark: detection.hasWatermark, watermarks: detection.watermarks }
   } catch (error) {
     return { success: false, error: error.message }
   }
 })
 
-// ==========================
-// REMOVE WATERMARK
-// ==========================
 ipcMain.handle('remove-watermark', async (event, { videoPath, options }) => {
   try {
     if (!videoProcessor) await initializeServices()
-
     const result = await videoProcessor.processVideo(videoPath, {
       removeWatermark: true,
       inpaintMethod: options.method || 'hybrid',
       outputPath: options.outputPath
     })
-
     return { success: true, result }
   } catch (error) {
     return { success: false, error: error.message }
   }
 })
 
-// ==========================
-// SPLIT VIDEO
-// ==========================
 ipcMain.handle('split-long-video', async (event, { videoPath, options }) => {
   try {
     if (!longVideoProcessor) {
-  const initialized = await initializeServices()
-  if (!initialized || !longVideoProcessor) {
-    return { success: false, error: 'No API keys configured or service failed to start' }
-  }
-}
-
+      const initialized = await initializeServices()
+      if (!initialized || !longVideoProcessor) {
+        return { success: false, error: 'No API keys configured or service failed to start' }
+      }
+    }
     const results = await longVideoProcessor.process(videoPath, {
       minDuration: options.minDuration || 15,
       maxDuration: options.maxDuration || 60,
@@ -229,19 +186,14 @@ ipcMain.handle('split-long-video', async (event, { videoPath, options }) => {
       seriesName: options.seriesName,
       detectionStrategy: options.strategy || 'comprehensive'
     })
-
     return { success: true, data: results }
   } catch (error) {
     return { success: false, error: error.message }
   }
 })
 
-// ==========================
-// VIDEO INFO
-// ==========================
 ipcMain.handle('get-video-info', async (event, videoPath) => {
   try {
-
     const metadata = await new Promise((resolve, reject) => {
       ffmpeg.ffprobe(videoPath, (err, data) => {
         if (err) reject(err)
@@ -250,6 +202,8 @@ ipcMain.handle('get-video-info', async (event, videoPath) => {
     })
 
     const videoStream = metadata.streams.find(s => s.codec_type === 'video')
+    const frameRateStr = videoStream.r_frame_rate || '30/1'
+    const [num, den] = frameRateStr.split('/')
 
     return {
       success: true,
@@ -258,7 +212,7 @@ ipcMain.handle('get-video-info', async (event, videoPath) => {
         size: metadata.format.size,
         width: videoStream.width,
         height: videoStream.height,
-        fps: eval(videoStream.r_frame_rate),
+        fps: (Number(num) / Number(den)) || 30, // FIX: Perhitungan manual tanpa menggunakan eval()
         bitrate: metadata.format.bit_rate
       }
     }
@@ -267,16 +221,10 @@ ipcMain.handle('get-video-info', async (event, videoPath) => {
   }
 })
 
-// ==========================
-// SELECT DIR
-// ==========================
 ipcMain.handle('select-output-dir', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openDirectory']
   })
-
-  if (!result.canceled) {
-    return { success: true, path: result.filePaths[0] }
-  }
+  if (!result.canceled) return { success: true, path: result.filePaths[0] }
   return { success: false }
 })
