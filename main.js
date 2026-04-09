@@ -2,11 +2,17 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs').promises
 const isDev = !app.isPackaged
+const ffmpeg = require('fluent-ffmpeg');
 
 const KeyStorage = require('./src/services/config/KeyStorage')
 const GeminiService = require('./src/services/ai/GeminiService')
 const VideoProcessor = require('./src/services/watermarkRemover')
 const LongVideoProcessor = require('./src/services/pipelines/LongVideoProcessor')
+const ffmpegPath = isDev 
+  ? path.join(__dirname, 'resources', 'ffmpeg', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
+  : path.join(process.resourcesPath, 'ffmpeg', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 let mainWindow
 let geminiService
@@ -211,11 +217,11 @@ ipcMain.handle('remove-watermark', async (event, { videoPath, options }) => {
 ipcMain.handle('split-long-video', async (event, { videoPath, options }) => {
   try {
     if (!longVideoProcessor) {
-      const initialized = await initializeServices()
-      if (!initialized) {
-        return { success: false, error: 'No API keys configured' }
-      }
-    }
+  const initialized = await initializeServices()
+  if (!initialized || !longVideoProcessor) {
+    return { success: false, error: 'No API keys configured or service failed to start' }
+  }
+}
 
     const results = await longVideoProcessor.process(videoPath, {
       minDuration: options.minDuration || 15,
