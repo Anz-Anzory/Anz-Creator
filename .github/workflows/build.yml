@@ -1,72 +1,103 @@
-name: 🚀 Build & Release
+appId: com.anzory.video-publisher
+productName: Anz Video Publisher
+copyright: Copyright © 2024 Anzory
 
-on:
-  push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      create_release:
-        description: 'Create GitHub Release?'
-        required: true
-        default: 'true'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
+directories:
+  output: release
+  buildResources: resources
 
-jobs:
-  build:
-    runs-on: windows-latest
-    permissions:
-      contents: write
+files:
+  - main.js
+  - preload.js
+  - dist/**/*
+  - src/services/**/*
+  - src/main/**/*
+  - resources/ffmpeg/**/*
+  - package.json
 
-    env:
-      CI: true
-      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+extraResources:
+  - from: resources/ffmpeg
+    to: ffmpeg
+    filter:
+      - "**/*"
+      - "!*.zip"
+      - "!*.tar.xz"
+  - from: resources/icon.png
+    to: icon.png
 
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+asar: true
+asarUnpack:
+  - resources/ffmpeg/**/
 
-      - name: 🟢 Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - ia32
+    - target: portable
+      arch:
+        - x64
+  icon: resources/icon.ico
+  publisherName: Anzory
+  verifyUpdateCodeSignature: false
 
-      - name: ⚡ Cache npm
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  icon: resources/icon.icns
+  category: public.app-category.video
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
 
-      # 🔥 INSTALL (AUTO FALLBACK)
-      - name: 📦 Install Dependencies
-        run: |
-          if exist package-lock.json (
-            npm ci
-          ) else (
-            npm install
-          )
-        shell: cmd
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+    - target: rpm
+      arch:
+        - x64
+  icon: resources/icon.png
+  category: AudioVideo
+  maintainer: Anzory
+  vendor: Anzory
+  synopsis: AI Video Publisher
+  description: AI-powered video generator for social media
 
-      # 🔥 SETUP FFMPEG
-      - name: 🎬 Setup FFmpeg
-        run: node scripts/setup-ffmpeg.js || exit /b 1
-        shell: cmd
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  installerHeaderIcon: resources/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Anz Video Publisher
+  include: resources/installer.nsh
 
-      # 🔥 BUILD + AUTO UPLOAD KE GITHUB RELEASE
-      - name: 🚀 Build & Publish
-        run: npm run build:win
-        shell: cmd
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380
 
-      # 🔍 DEBUG (optional tapi berguna)
-      - name: 🔍 Check Output
-        run: |
-          echo === RELEASE ===
-          dir release\ /s /b 2>nul || echo "No release folder"
-        shell: cmd
+# TIDAK ADA bagian publish = tidak auto-upload ke GitHub
