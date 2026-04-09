@@ -1,103 +1,46 @@
-appId: com.anzory.video-publisher
-productName: Anz Video Publisher
-copyright: Copyright © 2024 Anzory
+name: Build Electron App
 
-directories:
-  output: release
-  buildResources: resources
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
 
-files:
-  - main.js
-  - preload.js
-  - dist/**/*
-  - src/services/**/*
-  - src/main/**/*
-  - resources/ffmpeg/**/*
-  - package.json
+jobs:
+  build:
+    runs-on: windows-latest
 
-extraResources:
-  - from: resources/ffmpeg
-    to: ffmpeg
-    filter:
-      - "**/*"
-      - "!*.zip"
-      - "!*.tar.xz"
-  - from: resources/icon.png
-    to: icon.png
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-asar: true
-asarUnpack:
-  - resources/ffmpeg/**/
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
 
-win:
-  target:
-    - target: nsis
-      arch:
-        - x64
-        - ia32
-    - target: portable
-      arch:
-        - x64
-  icon: resources/icon.ico
-  publisherName: Anzory
-  verifyUpdateCodeSignature: false
+    - name: Install dependencies
+      run: npm ci
 
-mac:
-  target:
-    - target: dmg
-      arch:
-        - x64
-        - arm64
-    - target: zip
-      arch:
-        - x64
-        - arm64
-  icon: resources/icon.icns
-  category: public.app-category.video
-  hardenedRuntime: true
-  gatekeeperAssess: false
-  entitlements: resources/entitlements.mac.plist
-  entitlementsInherit: resources/entitlements.mac.plist
+    - name: Build renderer
+      run: npm run build:renderer
 
-linux:
-  target:
-    - target: AppImage
-      arch:
-        - x64
-    - target: deb
-      arch:
-        - x64
-    - target: rpm
-      arch:
-        - x64
-  icon: resources/icon.png
-  category: AudioVideo
-  maintainer: Anzory
-  vendor: Anzory
-  synopsis: AI Video Publisher
-  description: AI-powered video generator for social media
+    - name: Build Electron (No Publish)
+      run: npx electron-builder --win --publish never
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
-  installerIcon: resources/icon.ico
-  uninstallerIcon: resources/icon.ico
-  installerHeaderIcon: resources/icon.ico
-  createDesktopShortcut: true
-  createStartMenuShortcut: true
-  shortcutName: Anz Video Publisher
-  include: resources/installer.nsh
+    - name: Upload Installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: Anz-Video-Publisher-Setup
+        path: release/*Setup*.exe
 
-dmg:
-  contents:
-    - x: 130
-      y: 220
-    - x: 410
-      y: 220
-      type: link
-      path: /Applications
-  window:
-    width: 540
-    height: 380
-
-# TIDAK ADA bagian publish = tidak auto-upload ke GitHub
+    - name: Upload Portable
+      uses: actions/upload-artifact@v4
+      with:
+        name: Anz-Video-Publisher-Portable
+        path: release/*.exe
+        if-no-files-found: ignore
