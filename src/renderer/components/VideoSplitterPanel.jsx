@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import ClipCard from './ClipCard';
 
 function VideoSplitterPanel() {
   const [video, setVideo] = useState(null);
   const [processing, setProcessing] = useState(false);
-  const [progress, setProgress] = useState(null);
+  const [progressData, setProgressData] = useState({ percent: 0, message: '' }); // FIX: State progress
   const [results, setResults] = useState(null);
 
   const [options, setOptions] = useState({
@@ -17,22 +17,30 @@ function VideoSplitterPanel() {
     strategy: 'comprehensive'
   });
 
-  // ✅ VALIDASI FILE
+  // FIX: Tangkap event progress dari backend Electron secara realtime
+  useEffect(() => {
+    const handleProgress = (data) => {
+      setProgressData(data);
+    };
+
+    window.electron.ipcRenderer.on('split-progress', handleProgress);
+
+    return () => {
+      window.electron.ipcRenderer.removeAllListeners('split-progress');
+    };
+  }, []);
+
   const onDrop = (files) => {
     const file = files[0];
-
     if (!file) return;
-
-    // validasi tipe video
     if (!file.type.startsWith('video/')) {
       alert('Hanya file video yang diperbolehkan!');
       return;
     }
-
     setVideo(file);
+    setResults(null);
   };
 
-  // ✅ FIX ACCEPT (INI YANG PENTING)
   const { getRootProps, getInputProps } = useDropzone({
     onDrop,
     multiple: false,
@@ -48,6 +56,7 @@ function VideoSplitterPanel() {
     if (!video) return;
 
     setProcessing(true);
+    setProgressData({ percent: 0, message: 'Menyiapkan mesin AI...' }); // Reset text awal
 
     try {
       const result = await window.electron.ipcRenderer.invoke('split-long-video', {
@@ -56,13 +65,16 @@ function VideoSplitterPanel() {
       });
 
       if (result.success) {
+        setProgressData({ percent: 100, message: 'Selesai!' });
         setResults(result.data);
       } else {
         alert('Error: ' + result.error);
+        setProgressData({ percent: 0, message: 'Gagal diproses.' });
       }
     } catch (err) {
       console.error(err);
       alert('Terjadi error saat processing');
+      setProgressData({ percent: 0, message: 'Error system.' });
     }
 
     setProcessing(false);
@@ -82,85 +94,82 @@ function VideoSplitterPanel() {
         )}
       </div>
 
-      {video && (
+      {video && !processing && !results && (
         <div className="options" style={{ marginTop: '1rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div>
               <label>Target Clips: {options.targetClips}</label>
               <input
-                type="range"
-                min="3"
-                max="30"
-                value={options.targetClips}
-                onChange={(e) =>
-                  setOptions({ ...options, targetClips: parseInt(e.target.value) })
-                }
+                type="range" min="3" max="30" value={options.targetClips}
+                onChange={(e) => setOptions({ ...options, targetClips: parseInt(e.target.value) })}
               />
             </div>
-
             <div>
               <label>Platform:</label>
               <select
                 value={options.platform}
-                onChange={(e) =>
-                  setOptions({ ...options, platform: e.target.value })
-                }
+                onChange={(e) => setOptions({ ...options, platform: e.target.value })}
               >
                 <option value="tiktok">TikTok</option>
                 <option value="instagram">Instagram</option>
                 <option value="youtube">YouTube Shorts</option>
               </select>
             </div>
-
             <div>
               <label>Min Duration: {options.minDuration}s</label>
               <input
-                type="range"
-                min="15"
-                max="30"
-                value={options.minDuration}
-                onChange={(e) =>
-                  setOptions({ ...options, minDuration: parseInt(e.target.value) })
-                }
+                type="range" min="15" max="30" value={options.minDuration}
+                onChange={(e) => setOptions({ ...options, minDuration: parseInt(e.target.value) })}
               />
             </div>
-
             <div>
               <label>Max Duration: {options.maxDuration}s</label>
               <input
-                type="range"
-                min="30"
-                max="90"
-                value={options.maxDuration}
-                onChange={(e) =>
-                  setOptions({ ...options, maxDuration: parseInt(e.target.value) })
-                }
+                type="range" min="30" max="90" value={options.maxDuration}
+                onChange={(e) => setOptions({ ...options, maxDuration: parseInt(e.target.value) })}
               />
             </div>
           </div>
-
           <div style={{ marginTop: '1rem' }}>
             <label>Series Name (optional):</label>
             <input
-              type="text"
-              placeholder="My Video Series"
-              value={options.seriesName}
-              onChange={(e) =>
-                setOptions({ ...options, seriesName: e.target.value })
-              }
+              type="text" placeholder="My Video Series" value={options.seriesName}
+              onChange={(e) => setOptions({ ...options, seriesName: e.target.value })}
             />
           </div>
         </div>
       )}
 
-      <button
-        onClick={handleProcess}
-        disabled={!video || processing}
-        className="btn-primary"
-        style={{ marginTop: '1rem', width: '100%' }}
-      >
-        {processing ? 'Processing...' : '✨ Split into Viral Clips'}
-      </button>
+      {/* FIX: TAMPILAN PROGRESS BAR */}
+      {processing && (
+        <div className="progress-container" style={{ marginTop: '2rem', padding: '1rem', background: 'rgba(0,0,0,0.05)', borderRadius: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+            <span>⏳ {progressData.message}</span>
+            <span style={{ color: '#4f46e5' }}>{progressData.percent}%</span>
+          </div>
+          <div style={{ width: '100%', backgroundColor: '#e2e8f0', borderRadius: '8px', height: '12px', overflow: 'hidden' }}>
+            <div
+              style={{
+                width: `${progressData.percent}%`,
+                background: 'linear-gradient(90deg, #4f46e5 0%, #3b82f6 100%)',
+                height: '100%',
+                transition: 'width 0.4s ease-in-out'
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {!processing && !results && (
+        <button
+          onClick={handleProcess}
+          disabled={!video}
+          className="btn-primary"
+          style={{ marginTop: '1.5rem', width: '100%' }}
+        >
+          ✨ Split into Viral Clips
+        </button>
+      )}
 
       {results && (
         <div className="results" style={{ marginTop: '2rem' }}>
@@ -175,6 +184,10 @@ function VideoSplitterPanel() {
               <ClipCard key={idx} clip={clip} />
             ))}
           </div>
+          
+          <button onClick={() => { setResults(null); setVideo(null); }} className="btn-secondary" style={{ marginTop: '2rem' }}>
+            Potong Video Lainnya
+          </button>
         </div>
       )}
     </div>
