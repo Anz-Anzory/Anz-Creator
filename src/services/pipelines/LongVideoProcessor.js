@@ -47,15 +47,14 @@ class LongVideoProcessor {
       
       const clips = await this.generator.generateClips(videoPath, plan, {
         onProgress: (progress) => {
-          // Kalkulasi Progress Total (berjalan dari 50% sampai 95%)
           const currentPercent = 50 + Math.round((progress.current / progress.total) * 45);
-          // Kalkulasi Progress Per Bagian (berjalan dari 0% sampai 100% per klip)
-          const taskPercent = Math.round((progress.current / progress.total) * 100);
+          // Gunakan subPercent realtime dari FFmpeg jika ada
+          const taskPercent = progress.subPercent ? Math.round(progress.subPercent) : Math.round((progress.current / progress.total) * 100);
           
           reportProgress(
             currentPercent, 
             taskPercent, 
-            `Memotong & Menganalisa Klip AI ${progress.current} dari ${progress.total}...`, 
+            progress.taskName || `Menganalisa AI Klip ${progress.current} dari ${progress.total}...`, 
             'Tahap 3: Pembuatan Klip'
           );
         }
