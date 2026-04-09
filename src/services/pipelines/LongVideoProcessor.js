@@ -10,7 +10,7 @@ class LongVideoProcessor {
   }
 
   async process(videoPath, options = {}) {
-    // FIX: Mengirim 4 data sekaligus (Progress Total, Progress Bagian, Pesan, Nama Tahapan)
+    // Fungsi bantuan untuk mengirim 2 lapis persentase ke UI
     const reportProgress = (overallPercent, taskPercent, message, taskName) => {
       if (options.onProgress) {
         options.onProgress({ overallPercent, taskPercent, message, taskName });
@@ -62,7 +62,7 @@ class LongVideoProcessor {
       
       results.stages.push({ name: 'generation', status: 'complete', clipsGenerated: clips.length });
       
-      reportProgress(100, 100, 'Semua proses selesai! Membersihkan file sampah...', 'Selesai');
+      reportProgress(100, 100, 'Semua proses selesai! Video siap diunduh.', 'Selesai');
       
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       
@@ -86,12 +86,14 @@ class LongVideoProcessor {
       reportProgress(0, 0, `ERROR: ${error.message}`, 'Proses Gagal');
       throw error;
     } finally {
-      // FIX: Kita HAPUS perintah 'this.generator.cleanup()' agar video hasil jadinya TIDAK dihapus.
+      // FIX: Hapus this.generator.cleanup() agar video yang sudah dirender TIDAK hilang/dihapus
       try { 
         await this.detector.cleanup(); 
       } catch (e) {
-        // Abaikan error saat membersihkan file sementara detektor
+        // Abaikan error saat membersihkan cache kecil
       }
     }
+  }
+} // <-- Penutup class
 
-module.exports = LongVideoProcessor;
+module.exports = LongVideoProcessor; // <-- WAJIB ADA AGAR TIDAK ERROR
