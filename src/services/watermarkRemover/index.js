@@ -1,17 +1,22 @@
 const fs = require("fs");
 const path = require("path");
 const fetch = require("node-fetch");
+const os = require("os");
 
 const { extractFrames, cropWatermark, overlayBack, buildVideo } = require("./ffmpeg");
 const { inpaint } = require("./ai");
 const { detectWatermark } = require("./detector");
 const { trackWatermark } = require("./tracker");
 const { watermarkList, settings } = require("./config");
+const tempBasePath = path.join(os.tmpdir(), 'anz-video-temp');
+if (!fs.existsSync(tempBasePath)) {
+  fs.mkdirSync(tempBasePath, { recursive: true });
+}
 
-const framesDir = "frames";
-const croppedDir = "cropped";
-const cleanDir = "clean";
-const finalDir = "frames_clean";
+const framesDir = path.join(tempBasePath, "frames");
+const croppedDir = path.join(tempBasePath, "cropped");
+const cleanDir = path.join(tempBasePath, "clean");
+const finalDir = path.join(tempBasePath, "frames_clean");
 
 async function processVideo(inputVideo) {
   console.log("🚀 Start processing...");
