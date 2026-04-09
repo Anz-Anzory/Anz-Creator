@@ -72,7 +72,7 @@ class GeminiService {
 
   async analyzeVideo(frames, prompt) {
     return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
       const imageParts = frames.map(frame => ({
         inlineData: { data: frame.base64, mimeType: frame.mimeType || 'image/jpeg' }
       }));
@@ -83,7 +83,7 @@ class GeminiService {
 
   async generateCaption(videoAnalysis, context = {}) {
     return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
       const strategies = {
         storytelling: 'Use storytelling hook - start with a relatable moment',
         education: 'Lead with value proposition - "Here\'s how..." or "Did you know..."',
@@ -118,7 +118,7 @@ OUTPUT FORMAT:
 
   async generateTitle(videoAnalysis) {
     return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
       const prompt = `Generate 5 catchy video titles for this content. 
 Format: Numbered list.
 Video context: ${videoAnalysis}
@@ -130,7 +130,7 @@ Make them viral-worthy, use power words, add emoji if appropriate.`;
 
   async generateHashtags(videoAnalysis, count = 15) {
     return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
       const prompt = `Generate ${count} relevant hashtags for this video content.
 Mix of: trending, niche-specific, broad reach.
 Return only hashtags separated by spaces.
@@ -142,7 +142,7 @@ Video context: ${videoAnalysis}`;
 
   async predictFYPScore(videoAnalysis, metadata) {
     return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
       const prompt = `Rate this video's viral potential (FYP score) from 0-100.
 Consider: hook strength, trending potential, engagement factors.
 Video Analysis: ${videoAnalysis}
