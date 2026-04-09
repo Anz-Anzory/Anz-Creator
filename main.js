@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron') // Pastikan ada protocol dan net
 const path = require('path')
 const fs = require('fs').promises
 const isDev = !app.isPackaged
@@ -54,14 +54,26 @@ function createWindow() {
   })
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  // FIX: Daftarkan custom protocol 'media://' untuk bypass keamanan file://
+  protocol.handle('media', (request) => {
+    // Ambil path asli dari URL (hapus 'media://')
+    let filePath = request.url.replace('media://', '')
+    
+    // Di Windows, hapus slash tambahan di awal drive letter (contoh: /C:/ -> C:/)
+    if (process.platform === 'win32' && filePath.startsWith('/')) {
+      filePath = filePath.slice(1)
+    }
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+    // Decode URL (untuk spasi %20 dll)
+    filePath = decodeURIComponent(filePath)
 
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    // Kembalikan file menggunakan modul 'net' bawaan Electron
+    return net.fetch('file://' + filePath)
+  })
+
+  // Setelah protocol terdaftar, barulah buat window
+  createWindow()
 })
 
 async function initializeServices() {
