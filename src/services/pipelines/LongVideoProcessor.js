@@ -94,7 +94,7 @@ class LongVideoProcessor {
       
       results.clips = clips;
       
-      console.log('\n' + '='.repeat(50));
+      console.log('\\n' + '='.repeat(50));
       console.log('PROCESSING COMPLETE!');
       console.log('='.repeat(50));
       console.log(`Total Clips: ${results.summary.totalClips}`);
