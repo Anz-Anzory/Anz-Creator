@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// FIX: Tambahkan 'split-progress' ke dalam array ini
+// Daftar whitelist saluran IPC yang diizinkan untuk keamanan
 const validChannels = [
   'save-api-keys',
   'get-key-status',
@@ -12,7 +12,7 @@ const validChannels = [
   'get-video-info',
   'select-output-dir',
   'split-progress',
-  'save-file'// <--- TAMBAHKAN INI
+  'save-file' // <--- INI KUNCI AGAR TOMBOL DOWNLOAD BERFUNGSI
 ];
 
 contextBridge.exposeInMainWorld('electron', {
@@ -21,7 +21,7 @@ contextBridge.exposeInMainWorld('electron', {
       if (validChannels.includes(channel)) {
         return ipcRenderer.invoke(channel, data);
       }
-      return Promise.reject(new Error(`Akses IPC ditolak untuk saluran tidak sah: ${channel}`));
+      return Promise.reject(new Error(`Akses IPC ditolak: ${channel}`));
     },
     on: (channel, callback) => {
       if (validChannels.includes(channel)) {
