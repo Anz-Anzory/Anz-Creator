@@ -8,7 +8,6 @@ class GeminiService {
   }
 
   async executeWithRotation(operation, operationName = 'operation') {
-    // FIX: Cegah crash sebelum loop jika array API Key kosong
     if (!this.apiKeys || this.apiKeys.length === 0) {
       throw new Error(`${operationName} gagal: Tidak ada API Key yang dikonfigurasi.`);
     }
@@ -25,6 +24,7 @@ class GeminiService {
         const { GoogleGenerativeAI } = require('@google/generative-ai');
         const genAI = new GoogleGenerativeAI(key);
         const result = await operation(genAI);
+        
         console.log(`${operationName} - Success with key ${index + 1}`);
         return result;
         
@@ -32,11 +32,9 @@ class GeminiService {
         lastError = error;
         attempts++;
         
-        // FIX: Tangani Error 503 (Server High Demand) dengan lebih sabar
         const isServerBusy = error.message?.includes('503') || error.message?.toLowerCase().includes('high demand');
         
         if (this.isRateLimitError(error) || isServerBusy) {
-          // Jika 503, tunggu lebih lama (10 detik) sebelum memutar kunci
           const waitTime = isServerBusy ? 10000 : this.extractRetryAfter(error);
           this.keyManager.markRateLimited(index, waitTime);
           
@@ -44,17 +42,18 @@ class GeminiService {
           
           if (attempts < this.maxRetries) {
             this.keyManager.rotateKey();
-            // Jeda sejenak sebelum mencoba kunci berikutnya
             await new Promise(res => setTimeout(res, 2000)); 
           }
         } else {
           throw error;
         }
       }
+    } // <-- Ini adalah penutup untuk 'while'
 
-    // FIX: Gunakan optional chaining (?.) untuk mencegah TypeError jika lastError masih kosong
     throw new Error(`${operationName} gagal setelah ${attempts} percobaan. Error: ${lastError?.message || 'Unknown API Error'}`);
-  }
+  } // <-- Ini adalah penutup untuk fungsi 'executeWithRotation'
+
+  // Fungsi isRateLimitError Anda tetap di bawah ini...
 
   isRateLimitError(error) {
     // FIX: Menambahkan penanganan untuk error 503 (Server Sibuk/Overloaded)
