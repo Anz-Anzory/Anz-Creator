@@ -4,10 +4,15 @@ class GeminiService {
   constructor(apiKeys) {
     this.keyManager = new GeminiKeyManager(apiKeys);
     this.maxRetries = apiKeys.length;
-    this.apiKeys = apiKeys; // Expose for other services
+    this.apiKeys = apiKeys; 
   }
 
   async executeWithRotation(operation, operationName = 'operation') {
+    // FIX: Cegah crash sebelum loop jika array API Key kosong
+    if (!this.apiKeys || this.apiKeys.length === 0) {
+      throw new Error(`${operationName} gagal: Tidak ada API Key yang dikonfigurasi.`);
+    }
+
     let attempts = 0;
     let lastError;
 
@@ -43,7 +48,8 @@ class GeminiService {
       }
     }
 
-    throw new Error(`${operationName} gagal setelah ${attempts} percobaan. Error: ${lastError.message}`);
+    // FIX: Gunakan optional chaining (?.) untuk mencegah TypeError jika lastError masih kosong
+    throw new Error(`${operationName} gagal setelah ${attempts} percobaan. Error: ${lastError?.message || 'Unknown API Error'}`);
   }
 
   isRateLimitError(error) {
@@ -67,14 +73,9 @@ class GeminiService {
   async analyzeVideo(frames, prompt) {
     return this.executeWithRotation(async (genAI) => {
       const model = genAI.getGenerativeModel({ model: 'gemini-3-flash' });
-      
       const imageParts = frames.map(frame => ({
-        inlineData: {
-          data: frame.base64,
-          mimeType: frame.mimeType || 'image/jpeg'
-        }
+        inlineData: { data: frame.base64, mimeType: frame.mimeType || 'image/jpeg' }
       }));
-
       const result = await model.generateContent([prompt, ...imageParts]);
       return result.response.text();
     }, 'Video Analysis');
@@ -83,7 +84,6 @@ class GeminiService {
   async generateCaption(videoAnalysis, context = {}) {
     return this.executeWithRotation(async (genAI) => {
       const model = genAI.getGenerativeModel({ model: 'gemini-3.1-pro-preview' });
-      
       const strategies = {
         storytelling: 'Use storytelling hook - start with a relatable moment',
         education: 'Lead with value proposition - "Here\'s how..." or "Did you know..."',
@@ -91,9 +91,7 @@ class GeminiService {
         inspiration: 'Lead with motivation or transformation',
         trending: 'Reference current trends or use popular formats'
       };
-
       const strategy = strategies[context.contentType] || strategies.entertainment;
-
       const prompt = `Create an engaging social media caption for this video.
 STRATEGY: ${strategy}
 VIDEO ANALYSIS: ${videoAnalysis}
@@ -114,7 +112,6 @@ OUTPUT FORMAT:
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0.8, maxOutputTokens: 500 }
       });
-      
       return result.response.text();
     }, 'Caption Generation');
   }
@@ -122,12 +119,10 @@ OUTPUT FORMAT:
   async generateTitle(videoAnalysis) {
     return this.executeWithRotation(async (genAI) => {
       const model = genAI.getGenerativeModel({ model: 'gemini-3.1-pro-preview' });
-      
       const prompt = `Generate 5 catchy video titles for this content. 
 Format: Numbered list.
 Video context: ${videoAnalysis}
 Make them viral-worthy, use power words, add emoji if appropriate.`;
-
       const result = await model.generateContent(prompt);
       return result.response.text();
     }, 'Title Generation');
@@ -136,12 +131,10 @@ Make them viral-worthy, use power words, add emoji if appropriate.`;
   async generateHashtags(videoAnalysis, count = 15) {
     return this.executeWithRotation(async (genAI) => {
       const model = genAI.getGenerativeModel({ model: 'gemini-3.1-pro-preview' });
-      
       const prompt = `Generate ${count} relevant hashtags for this video content.
 Mix of: trending, niche-specific, broad reach.
 Return only hashtags separated by spaces.
 Video context: ${videoAnalysis}`;
-
       const result = await model.generateContent(prompt);
       return result.response.text();
     }, 'Hashtag Generation');
@@ -150,25 +143,18 @@ Video context: ${videoAnalysis}`;
   async predictFYPScore(videoAnalysis, metadata) {
     return this.executeWithRotation(async (genAI) => {
       const model = genAI.getGenerativeModel({ model: 'gemini-3.1-pro-preview' });
-      
       const prompt = `Rate this video's viral potential (FYP score) from 0-100.
 Consider: hook strength, trending potential, engagement factors.
 Video Analysis: ${videoAnalysis}
 Metadata: ${JSON.stringify(metadata)}
 Format: JSON with score, reasoning, and suggestions.`;
-
       const result = await model.generateContent(prompt);
       return result.response.text();
     }, 'FYP Score Prediction');
   }
 
-  getStats() {
-    return this.keyManager.getStats();
-  }
-
-  resetKeys() {
-    this.keyManager.resetAll();
-  }
+  getStats() { return this.keyManager.getStats(); }
+  resetKeys() { this.keyManager.resetAll(); }
 }
 
 module.exports = GeminiService;
