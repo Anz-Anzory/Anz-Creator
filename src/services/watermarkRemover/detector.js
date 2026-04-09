@@ -2,7 +2,7 @@ const fs = require("fs");
 const { PNG } = require("pngjs");
 const pixelmatch = require("pixelmatch");
 
-export function detectWatermark(framePath, templatePath) {
+function detectWatermark(framePath, templatePath) {
   const img = PNG.sync.read(fs.readFileSync(framePath));
   const template = PNG.sync.read(fs.readFileSync(templatePath));
 
@@ -38,3 +38,7 @@ export function detectWatermark(framePath, templatePath) {
     height: th
   };
 }
+
+module.exports = {
+  detectWatermark
+};

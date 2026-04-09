@@ -1,7 +1,13 @@
-export function trackWatermark(prev, frameIndex) {
-  // simple static (watermark biasanya diam)
-  return prev;
-
-  // kalau mau advanced:
-  // bisa tambah optical flow / motion tracking
+function trackWatermark(prev, frameIndex) {
+  // simple tracking (bisa kamu upgrade nanti)
+  return {
+    x: prev.x,
+    y: prev.y,
+    width: prev.width,
+    height: prev.height
+  };
 }
+
+module.exports = {
+  trackWatermark
+};
