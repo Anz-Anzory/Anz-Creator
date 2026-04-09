@@ -8,18 +8,19 @@ class ClipGenerator {
   constructor(apiKeys) {
     this.gemini = new GeminiService(apiKeys);
     this.thumbnailExtractor = new ThumbnailExtractor();
+    // Menyimpan sementara di folder Temp bawaan OS
     this.outputDir = path.join(require('os').tmpdir(), 'generated-clips');
   }
 
   async generateClips(videoPath, clipPlan, options = {}) {
-    console.log(`Generating ${clipPlan.length} clips...`);
+    console.log(`Mulai merender ${clipPlan.length} klip video...`);
     await fs.mkdir(this.outputDir, { recursive: true });
     const generatedClips = [];
     
     for (let i = 0; i < clipPlan.length; i++) {
       const plan = clipPlan[i];
       try {
-        // Proses render potongan MP4 dengan pantauan Real-Time
+        // 1. Ekstrak/Potong Video MP4 dengan Pantauan Progress Real-Time
         const clipPath = await this.extractClip(videoPath, plan, i + 1, (percent) => {
           if (options.onProgress) {
             options.onProgress({
@@ -31,11 +32,22 @@ class ClipGenerator {
           }
         });
 
-        // Generate Metadata & Thumbnail
+        // 2. Generate Metadata (Title, Caption, Hashtag) via AI (Sekarang 3-in-1 agar hemat kuota)
+        if (options.onProgress) {
+          options.onProgress({
+            current: i + 1, total: clipPlan.length, subPercent: 100,
+            taskName: `Menganalisa AI Klip ${i + 1}/${clipPlan.length}...`
+          });
+        }
         const metadata = await this.generateMetadata(clipPath, plan);
+        
+        // 3. Ekstrak 3 Thumbnail Terbaik
         const thumbnails = await this.thumbnailExtractor.extractThumbnails(clipPath, plan, { count: 3 });
+        
+        // 4. Kalkulasi Skor FYP Akhir
         const finalFYPScore = await this.calculateFinalFYPScore(plan, metadata);
 
+        // Gabungkan semua data
         const generatedClip = {
           id: plan.id,
           sequence: plan.sequence || (i + 1),
@@ -59,15 +71,9 @@ class ClipGenerator {
         
         generatedClips.push(generatedClip);
         
-        if (options.onProgress) {
-          options.onProgress({
-            current: i + 1,
-            total: clipPlan.length,
-            clip: generatedClip
-          });
-        }
       } catch (error) {
-        console.error(`Failed to generate clip ${plan.id}:`, error.message);
+        console.error(`Gagal membuat klip ${plan.id}:`, error.message);
+        // Tetap masukkan ke daftar tapi dengan status error agar UI tidak crash
         generatedClips.push({
           id: plan.id,
           sequence: plan.sequence || (i + 1),
@@ -76,9 +82,13 @@ class ClipGenerator {
         });
       }
     }
+    
     return generatedClips;
   }
 
+  // ==========================================
+  // FUNGSI POTONG VIDEO (FFMPEG)
+  // ==========================================
   async extractClip(videoPath, plan, sequence, onProgressCallback) {
     const outputPath = path.join(this.outputDir, `clip-${String(sequence).padStart(3, '0')}-fyp${plan.fypScore}.mp4`);
     
@@ -93,7 +103,7 @@ class ClipGenerator {
           '-crf 23',
           '-preset fast',
           '-movflags +faststart',
-          // FIX: Memisahkan argumen '-vf' agar Windows/FFmpeg tidak error (Kode 4294967274)
+          // FIX: Parameter dipisah koma agar tidak error 4294967274 di Windows
           '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p' 
         ])
         .on('progress', (progress) => {
@@ -108,19 +118,51 @@ class ClipGenerator {
     });
   }
 
+  // ==========================================
+  // FUNGSI METADATA AI (3-IN-1 JSON)
+  // ==========================================
   async generateMetadata(clipPath, plan) {
     const samples = await this.extractSampleFrames(clipPath);
-    const [title, caption, hashtags] = await Promise.all([
-      this.generateTitle(samples, plan),
-      this.generateCaption(samples, plan),
-      this.generateHashtags(samples, plan)
-    ]);
-    return { title, caption, hashtags };
+    
+    return this.gemini.executeWithRotation(async (genAI) => {
+      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+      
+      const prompt = `Analyze these video frames for a ${plan.contentType} short video (FYP Score: ${plan.fypScore}).
+      You MUST return the response EXACTLY as a valid JSON object. Do not include markdown code blocks like \`\`\`json.
+      Structure required:
+      {
+        "title": "Write a viral title max 60 chars",
+        "caption": "Write an engaging caption with a hook and emojis",
+        "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4", "#tag5"]
+      }`;
+
+      const images = samples.map(f => ({ inlineData: { data: f.base64, mimeType: 'image/jpeg' } }));
+      const result = await model.generateContent([prompt, ...images]);
+      
+      let textResponse = result.response.text().trim();
+      // Bersihkan sisa-sisa markdown JSON jika AI membandel
+      textResponse = textResponse.replace(/^```json/i, '').replace(/```$/i, '').trim();
+      
+      try {
+        return JSON.parse(textResponse);
+      } catch (err) {
+        console.warn("Gagal parsing JSON dari AI, menggunakan data cadangan (fallback).");
+        return {
+          title: "Viral Video " + plan.fypScore,
+          caption: "Tonton keseruan video ini sampai habis! 🔥 Jangan lupa like dan share ya!",
+          hashtags: ["#fyp", "#viral", "#trending", "#video"]
+        };
+      }
+    }, 'Metadata Generation (3-in-1 JSON)');
   }
 
+  // ==========================================
+  // FUNGSI BANTUAN (EKSTRAK FRAME UNTUK AI)
+  // ==========================================
   async extractSampleFrames(clipPath, count = 3) {
     const frames = [];
-    const timestamps = [0.2, 0.5, 0.8]; // Diubah agar sebarannya lebih merata
+    // Mengambil sampel di detik 20%, 50%, dan 80% dari total durasi klip
+    const timestamps = [0.2, 0.5, 0.8]; 
     
     for (let i = 0; i < count; i++) {
       const framePath = path.join(this.outputDir, `frame-temp-${Date.now()}-${i}.jpg`);
@@ -138,56 +180,30 @@ class ClipGenerator {
       
       const base64 = await fs.readFile(framePath, { encoding: 'base64' });
       frames.push({ path: framePath, base64, index: i });
+      // Langsung hapus frame temp setelah diubah ke base64 agar HDD tidak penuh
       await fs.unlink(framePath).catch(() => {});
     }
     return frames;
   }
 
-  // Menggunakan Gemini 3 Flash Preview (Super Cepat & Bebas Limit)
-  async generateTitle(frames, plan) {
-    return this.gemini.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
-      const prompt = `Create a VIRAL, ATTENTION-GRABBING title for this short video.
-      Context: ${plan.contentType}, FYP Score: ${plan.fypScore}/100
-      Key moment: ${plan.keyMoments?.[0] || 'Interesting content'}
-      Rules: Max 60 chars, power words. Return ONLY the title without quotes.`;
-      const images = frames.map(f => ({ inlineData: { data: f.base64, mimeType: 'image/jpeg' } }));
-      const result = await model.generateContent([prompt, ...images]);
-      return result.response.text().trim().replace(/^["']|["']$/g, '');
-    }, 'Title Generation');
-  }
-
-  async generateCaption(frames, plan) {
-    return this.gemini.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
-      const prompt = `Create an engaging social media caption for this video.
-      Content Type: ${plan.contentType} | Duration: ${plan.duration}s
-      Structure: Hook, Context, CTA. Emojis. Max 150 chars for hook.`;
-      const images = frames.map(f => ({ inlineData: { data: f.base64, mimeType: 'image/jpeg' } }));
-      const result = await model.generateContent([prompt, ...images]);
-      return result.response.text().trim();
-    }, 'Caption Generation');
-  }
-
-  async generateHashtags(frames, plan) {
-    return this.gemini.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
-      const prompt = `Generate 15 strategic hashtags for this ${plan.contentType} video. Mix broad, niche, community. Return ONLY hashtags separated by spaces.`;
-      const result = await model.generateContent(prompt);
-      return result.response.text().match(/#\w+/g) || [];
-    }, 'Hashtag Generation');
-  }
-
+  // ==========================================
+  // FUNGSI BANTUAN (KALKULASI SKOR FYP)
+  // ==========================================
   async calculateFinalFYPScore(plan, metadata) {
     let score = plan.fypScore;
     if (metadata.title.length > 10) score += 2;
     if (metadata.caption.includes('?') || metadata.caption.includes('!')) score += 2;
-    if (metadata.hashtags.length >= 10) score += 2;
+    if (metadata.hashtags && metadata.hashtags.length >= 5) score += 2;
     return Math.min(100, score);
   }
 
+  // Fungsi untuk membersihkan folder (Dipanggil manual jika dibutuhkan)
   async cleanup() {
-    try { await fs.rm(this.outputDir, { recursive: true, force: true }); } catch {}
+    try { 
+      await fs.rm(this.outputDir, { recursive: true, force: true }); 
+    } catch (e) {
+      // Abaikan jika folder sedang digunakan
+    }
   }
 }
 
