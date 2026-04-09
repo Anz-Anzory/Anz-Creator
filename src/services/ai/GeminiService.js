@@ -1,165 +1,125 @@
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const GeminiKeyManager = require('./GeminiKeyManager');
 
 class GeminiService {
   constructor(apiKeys) {
+    if (!apiKeys || apiKeys.length === 0) {
+      throw new Error('GeminiService gagal: Tidak ada API Key yang dikonfigurasi.');
+    }
+    this.apiKeys = apiKeys;
     this.keyManager = new GeminiKeyManager(apiKeys);
-    this.maxRetries = apiKeys.length;
-    this.apiKeys = apiKeys; 
+    
+    // Batas percobaan dihitung dari jumlah API Key dikali jumlah model fallback
+    this.maxRetries = apiKeys.length * 4; 
   }
 
+  // Daftar model cadangan dengan prioritas eksekusi (Atas ke Bawah)
+  fallbackModels = [
+    'gemini-3.1-flash-lite-preview',
+    'gemini-3-flash-preview',
+    'gemini-2.5-flash'
+  ];
+
+  /**
+   * Mengeksekusi operasi API dengan sistem rotasi ganda (Model & API Key).
+   */
   async executeWithRotation(operation, operationName = 'operation') {
     if (!this.apiKeys || this.apiKeys.length === 0) {
-      throw new Error(`${operationName} gagal: Tidak ada API Key yang dikonfigurasi.`);
+      throw new Error(`${operationName} gagal: Tidak ada API Key yang valid.`);
     }
 
     let attempts = 0;
     let lastError;
+    let currentModelIndex = 0;
 
     while (attempts < this.maxRetries) {
-      const { key, index } = this.keyManager.getCurrentKey();
+      const { key, index: keyIndex } = this.keyManager.getCurrentKey();
+      const currentModelName = this.fallbackModels[currentModelIndex];
       
       try {
-        console.log(`${operationName} - Using key ${index + 1}/${this.keyManager.apiKeys.length}`);
+        console.log(`[AI] ${operationName} | Key: ${keyIndex + 1}/${this.apiKeys.length} | Model: ${currentModelName}`);
         
-        const { GoogleGenerativeAI } = require('@google/generative-ai');
         const genAI = new GoogleGenerativeAI(key);
-        const result = await operation(genAI);
         
-        console.log(`${operationName} - Success with key ${index + 1}`);
+        // Eksekusi fungsi internal dengan menyuntikkan instance genAI dan nama model aktif
+        const result = await operation(genAI, currentModelName);
+        
+        console.log(`✅ ${operationName} - Sukses menggunakan ${currentModelName}`);
         return result;
         
       } catch (error) {
         lastError = error;
         attempts++;
         
-        const isServerBusy = error.message?.includes('503') || error.message?.toLowerCase().includes('high demand');
+        const errorMessage = error.message?.toLowerCase() || '';
+        const isServerBusy = errorMessage.includes('503') || errorMessage.includes('high demand');
+        const isModelNotFound = errorMessage.includes('404') || errorMessage.includes('not found');
         
-        if (this.isRateLimitError(error) || isServerBusy) {
-          const waitTime = isServerBusy ? 10000 : this.extractRetryAfter(error);
-          this.keyManager.markRateLimited(index, waitTime);
+        // [HANDLE] Error 503 (Server Overload) atau 404 (Model Tidak Tersedia)
+        if (isServerBusy || isModelNotFound) {
+          console.warn(`[!] Model ${currentModelName} gagal (${isServerBusy ? '503 Server Sibuk' : '404 Tidak Ditemukan'}).`);
           
-          console.warn(`[!] Key ${index + 1} terkena Limit / 503 Busy. Menunggu ${waitTime/1000} detik... (Attempt ${attempts}/${this.maxRetries})`);
-          
-          if (attempts < this.maxRetries) {
+          if (currentModelIndex < this.fallbackModels.length - 1) {
+            currentModelIndex++;
+            console.log(`🔄 Pindah ke model cadangan: ${this.fallbackModels[currentModelIndex]}...`);
+          } else {
+            console.warn(`[!] Semua prioritas model gagal. Mengganti API Key dan memberikan jeda...`);
             this.keyManager.rotateKey();
-            await new Promise(res => setTimeout(res, 2000)); 
+            currentModelIndex = 0; // Reset kembali ke prioritas model tertinggi
+            await new Promise(res => setTimeout(res, 5000));
           }
-        } else {
-          throw error;
+          continue;
         }
+        
+        // [HANDLE] Error 429 (Rate Limit / Quota Exceeded)
+        if (this.isRateLimitError(error)) {
+          const waitTime = this.extractRetryAfter(error);
+          this.keyManager.markRateLimited(keyIndex, waitTime);
+          
+          console.warn(`[!] Key ${keyIndex + 1} terkena Limit. Putar kunci dan tunggu ${waitTime/1000} detik...`);
+          this.keyManager.rotateKey();
+          await new Promise(res => setTimeout(res, 2000)); 
+          continue;
+        } 
+        
+        // Lempar error jika merupakan kegagalan logika sistem/kode (bukan kendala jaringan)
+        throw error;
       }
-    } // <-- Ini adalah penutup untuk 'while'
+    }
 
-    throw new Error(`${operationName} gagal setelah ${attempts} percobaan. Error: ${lastError?.message || 'Unknown API Error'}`);
-  } // <-- Ini adalah penutup untuk fungsi 'executeWithRotation'
+    throw new Error(`${operationName} gagal total setelah ${attempts} percobaan. Pesan Error: ${lastError?.message || 'Unknown API Error'}`);
+  }
 
-  // Fungsi isRateLimitError Anda tetap di bawah ini...
-
+  /**
+   * Memvalidasi apakah error merupakan kendala limitasi kuota.
+   */
   isRateLimitError(error) {
-    // FIX: Menambahkan penanganan untuk error 503 (Server Sibuk/Overloaded)
     const rateLimitIndicators = [
-      'rate limit', 'quota exceeded', '429', 'RESOURCE_EXHAUSTED', 'Too many requests',
-      '503', 'service unavailable', 'high demand', 'overloaded'
+      'rate limit', 'quota exceeded', '429', 'resource_exhausted', 'too many requests'
     ];
     const errorMessage = error.message?.toLowerCase() || '';
     const errorCode = String(error.code || '');
     
     return rateLimitIndicators.some(indicator => 
-      errorMessage.includes(indicator.toLowerCase()) || errorCode.includes(indicator)
+      errorMessage.includes(indicator) || errorCode.includes(indicator)
     );
   }
 
+  /**
+   * Mengekstrak waktu jeda (dalam milidetik) dari pesan error Google API.
+   */
   extractRetryAfter(error) {
-    const match = error.message?.match(/retry after (\d+) seconds?/i);
-    if (match) return parseInt(match[1]) * 1000;
-    return 60000;
+    let waitTime = 15000; // Standar jeda: 15 detik
+    const errorMessage = error.message?.toLowerCase() || '';
+    
+    // Analisis regex untuk menangkap format "Please retry in XXs"
+    const match = errorMessage.match(/retry in ([\d.]+)s/);
+    if (match && match[1]) {
+      waitTime = Math.ceil(parseFloat(match[1])) * 1000;
+    }
+    
+    return Math.min(waitTime, 60000); // Batas maksimal penundaan adalah 60 detik
   }
-
-  async analyzeVideo(frames, prompt) {
-    return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
-      const imageParts = frames.map(frame => ({
-        inlineData: { data: frame.base64, mimeType: frame.mimeType || 'image/jpeg' }
-      }));
-      const result = await model.generateContent([prompt, ...imageParts]);
-      return result.response.text();
-    }, 'Video Analysis');
-  }
-
-  async generateCaption(videoAnalysis, context = {}) {
-    return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
-      const strategies = {
-        storytelling: 'Use storytelling hook - start with a relatable moment',
-        education: 'Lead with value proposition - "Here\'s how..." or "Did you know..."',
-        entertainment: 'Start with curiosity gap or unexpected statement',
-        inspiration: 'Lead with motivation or transformation',
-        trending: 'Reference current trends or use popular formats'
-      };
-      const strategy = strategies[context.contentType] || strategies.entertainment;
-      const prompt = `Create an engaging social media caption for this video.
-STRATEGY: ${strategy}
-VIDEO ANALYSIS: ${videoAnalysis}
-REQUIREMENTS:
-- Hook in first line (stop the scroll)
-- Main content (2-3 sentences max)
-- Strong CTA (follow, comment, share, save)
-- Use emojis naturally
-- Add line breaks for readability
-- Target audience: ${context.audience || 'general'}
-
-OUTPUT FORMAT:
-[Hook]
-[Content]
-[CTA + Hashtags]`;
-
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.8, maxOutputTokens: 500 }
-      });
-      return result.response.text();
-    }, 'Caption Generation');
-  }
-
-  async generateTitle(videoAnalysis) {
-    return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
-      const prompt = `Generate 5 catchy video titles for this content. 
-Format: Numbered list.
-Video context: ${videoAnalysis}
-Make them viral-worthy, use power words, add emoji if appropriate.`;
-      const result = await model.generateContent(prompt);
-      return result.response.text();
-    }, 'Title Generation');
-  }
-
-  async generateHashtags(videoAnalysis, count = 15) {
-    return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
-      const prompt = `Generate ${count} relevant hashtags for this video content.
-Mix of: trending, niche-specific, broad reach.
-Return only hashtags separated by spaces.
-Video context: ${videoAnalysis}`;
-      const result = await model.generateContent(prompt);
-      return result.response.text();
-    }, 'Hashtag Generation');
-  }
-
-  async predictFYPScore(videoAnalysis, metadata) {
-    return this.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
-      const prompt = `Rate this video's viral potential (FYP score) from 0-100.
-Consider: hook strength, trending potential, engagement factors.
-Video Analysis: ${videoAnalysis}
-Metadata: ${JSON.stringify(metadata)}
-Format: JSON with score, reasoning, and suggestions.`;
-      const result = await model.generateContent(prompt);
-      return result.response.text();
-    }, 'FYP Score Prediction');
-  }
-
-  getStats() { return this.keyManager.getStats(); }
-  resetKeys() { this.keyManager.resetAll(); }
 }
 
 module.exports = GeminiService;
