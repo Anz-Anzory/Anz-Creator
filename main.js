@@ -55,18 +55,21 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  // FIX: Daftarkan custom protocol 'media://' dengan format URL yang valid
+  // FIX 1: Protocol 'media://' yang 100% Anti-Error di Windows
   protocol.handle('media', (request) => {
     let filePath = request.url.replace('media://', '');
-    filePath = decodeURIComponent(filePath);
-    
-    if (process.platform === 'win32' && filePath.startsWith('/')) {
-      filePath = filePath.slice(1);
+    try {
+      filePath = decodeURIComponent(filePath);
+      if (process.platform === 'win32' && filePath.startsWith('/')) {
+        filePath = filePath.slice(1);
+      }
+      // pathToFileURL otomatis membuat URL 'file:///' yang valid dan disukai Chromium
+      const fileUrl = require('url').pathToFileURL(filePath).toString();
+      return net.fetch(fileUrl);
+    } catch (e) {
+      console.error("Media protocol error:", e);
+      return new Response('Not Found', { status: 404 });
     }
-
-    // FIX: Gunakan pathToFileURL agar otomatis menjadi 'file:///' yang diizinkan Chromium
-    const fileUrl = require('url').pathToFileURL(filePath).href;
-    return net.fetch(fileUrl);
   });
 
   createWindow();
@@ -201,6 +204,20 @@ ipcMain.handle('remove-watermark', async (event, { videoPath, options }) => {
     return { success: false, error: error.message }
   }
 })
+
+// FIX 2: Tambahkan Handler untuk Fitur Tombol Download Video (Taruh di deretan IPC Handlers bawah)
+ipcMain.handle('save-file', async (event, { sourcePath, defaultName }) => {
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: defaultName,
+    filters: [{ name: 'Video MP4', extensions: ['mp4'] }]
+  });
+  
+  if (!canceled && filePath) {
+    await fs.copyFile(sourcePath, filePath);
+    return { success: true, savedPath: filePath };
+  }
+  return { success: false };
+});
 
 // ==========================
 // SPLIT VIDEO
