@@ -86,10 +86,12 @@ class LongVideoProcessor {
       reportProgress(0, 0, `ERROR: ${error.message}`, 'Proses Gagal');
       throw error;
     } finally {
-      await this.detector.cleanup();
-      await this.generator.cleanup();
+      // FIX: Kita HAPUS perintah 'this.generator.cleanup()' agar video hasil jadinya TIDAK dihapus.
+      try { 
+        await this.detector.cleanup(); 
+      } catch (e) {
+        // Abaikan error saat membersihkan file sementara detektor
+      }
     }
-  }
-}
 
 module.exports = LongVideoProcessor;
