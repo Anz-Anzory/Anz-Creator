@@ -81,20 +81,23 @@ class LongVideoProcessor {
       
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       
+      // FIX: Cegah NaN menggunakan penanganan valid array length
+      const validClips = clips.filter(c => !c.error);
+      const avgScore = validClips.length > 0 
+        ? Math.round(validClips.reduce((sum, c) => sum + (c.metadata?.fypScore || 0), 0) / validClips.length)
+        : 0;
+
       results.summary = {
         totalClips: clips.length,
         totalDuration: clips.reduce((sum, c) => sum + (c.duration || 0), 0),
-        averageFYPScore: Math.round(
-          clips.filter(c => !c.error).reduce((sum, c) => sum + c.metadata.fypScore, 0) / 
-          clips.filter(c => !c.error).length
-        ),
+        averageFYPScore: avgScore,
         processingTime: `${duration}s`,
         outputDirectory: require('path').dirname(clips[0]?.videoPath || '')
       };
       
       results.clips = clips;
       
-      console.log('\\n' + '='.repeat(50));
+      console.log('\n' + '='.repeat(50));
       console.log('PROCESSING COMPLETE!');
       console.log('='.repeat(50));
       console.log(`Total Clips: ${results.summary.totalClips}`);
