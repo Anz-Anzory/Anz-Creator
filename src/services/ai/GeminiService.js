@@ -53,11 +53,13 @@ class GeminiService {
   }
 
   isRateLimitError(error) {
+    // FIX: Menambahkan penanganan untuk error 503 (Server Sibuk/Overloaded)
     const rateLimitIndicators = [
-      'rate limit', 'quota exceeded', '429', 'RESOURCE_EXHAUSTED', 'Too many requests'
+      'rate limit', 'quota exceeded', '429', 'RESOURCE_EXHAUSTED', 'Too many requests',
+      '503', 'service unavailable', 'high demand', 'overloaded'
     ];
     const errorMessage = error.message?.toLowerCase() || '';
-    const errorCode = error.code || '';
+    const errorCode = String(error.code || '');
     
     return rateLimitIndicators.some(indicator => 
       errorMessage.includes(indicator.toLowerCase()) || errorCode.includes(indicator)
