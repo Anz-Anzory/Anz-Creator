@@ -1,46 +1,83 @@
-name: Build Electron App
+name: 🚀 Build & Release
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    tags:
+      - 'v*'
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create GitHub Release?'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write
+
+    env:
+      CI: true
+      # PERBAIKAN 1: Gunakan GITHUB_TOKEN bawaan agar tidak perlu repot setting secret manual
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-    - name: Install dependencies
-      run: npm ci
+      - name: ⚡ Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
 
-    - name: Build renderer
-      run: npm run build:renderer
+      # 🔥 INSTALL (AUTO FALLBACK)
+      - name: 📦 Install Dependencies
+        run: |
+          if exist package-lock.json (
+            npm ci
+          ) else (
+            npm install
+          )
+        shell: cmd
 
-    - name: Build Electron (No Publish)
-      run: npx electron-builder --win --publish never
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 🔥 SETUP FFMPEG
+      - name: 🎬 Setup FFmpeg
+        run: node scripts/setup-ffmpeg.js || exit /b 1
+        shell: cmd
 
-    - name: Upload Installer
-      uses: actions/upload-artifact@v4
-      with:
-        name: Anz-Video-Publisher-Setup
-        path: release/*Setup*.exe
+      # 🔥 BUILD + AUTO UPLOAD KE GITHUB RELEASE
+      - name: 🚀 Build & Publish
+        # PERBAIKAN 2: Tambahkan --publish always agar pasti terupload ke halaman Release
+        run: npm run build:win -- --publish always
+        shell: cmd
 
-    - name: Upload Portable
-      uses: actions/upload-artifact@v4
-      with:
-        name: Anz-Video-Publisher-Portable
-        path: release/*.exe
-        if-no-files-found: ignore
+      # 🔍 DEBUG (optional tapi berguna)
+      - name: 🔍 Check Output
+        run: |
+          echo === RELEASE ===
+          dir release\ /s /b 2>nul || echo "No release folder"
+        shell: cmd
+
+      # PERBAIKAN 3: Backup output build. Jika Release gagal, file exe tetap bisa diunduh dari log GitHub Actions
+      - name: 💾 Upload Artifact Backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anz-Video-Publisher-Windows
+          path: |
+            release/*.exe
+            !release/*unpacked*/**
