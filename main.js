@@ -122,13 +122,15 @@ ipcMain.handle('analyze-video', async (event, { videoPath, settings }) => {
 
 ipcMain.handle('detect-watermark', async (event, { videoPath, options = {} }) => {
   try {
-    if (!videoProcessor) await initializeServices()
-    const WatermarkDetector = require('./src/services/watermarkRemover/detector') 
-    const detector = new WatermarkDetector(geminiService.apiKeys)
+    const fs = require('fs').promises;
+    const path = require('path');
+    const { detectWatermark } = require('./src/services/watermarkRemover/detector');
+    const { watermarkList } = require('./src/services/watermarkRemover/config');
 
-    const tempDir = require('os').tmpdir()
-    const framePath = path.join(tempDir, `frame-${Date.now()}.jpg`)
+    const tempDir = require('os').tmpdir();
+    const framePath = path.join(tempDir, `frame-detect-${Date.now()}.png`); // Harus PNG karena pngjs
 
+    // 1. Ambil 1 frame screenshot dari tengah video
     await new Promise((resolve, reject) => {
       ffmpeg(videoPath)
         .screenshots({
@@ -138,23 +140,45 @@ ipcMain.handle('detect-watermark', async (event, { videoPath, options = {} }) =>
           size: '1280x720'
         })
         .on('end', resolve)
-        .on('error', reject)
-    })
+        .on('error', reject);
+    });
 
-    const base64 = await fs.readFile(framePath, { encoding: 'base64' })
-    const detection = await detector.detect(base64, framePath, {
-      useAI: options.useAI !== false,
-      useHeuristics: options.useHeuristics !== false,
-      templates: options.templates || []
-    })
+    // 2. Lakukan deteksi menggunakan metode Pixelmatch (Sesuai dengan detector.js Anda)
+    let detectedWatermarks = [];
+    
+    // Pastikan config watermarkList tersedia dan template-nya ada
+    if (watermarkList && watermarkList.length > 0) {
+      for (const wm of watermarkList) {
+        // Asumsi wm.template adalah path file template PNG
+        if (require('fs').existsSync(wm.template)) {
+          const area = detectWatermark(framePath, wm.template);
+          
+          // Jika x dan y tidak 0 atau diff memenuhi syarat, berarti terdeteksi
+          if (area) {
+            detectedWatermarks.push({
+              type: wm.name || 'Watermark',
+              position: `X:${area.x} Y:${area.y}`,
+              confidence: 0.95, // Dummy confidence
+              area: area
+            });
+          }
+        }
+      }
+    }
 
-    await fs.unlink(framePath)
+    // 3. Bersihkan file temp
+    await fs.unlink(framePath).catch(() => {});
 
-    return { success: true, hasWatermark: detection.hasWatermark, watermarks: detection.watermarks }
+    return { 
+      success: true, 
+      hasWatermark: detectedWatermarks.length > 0, 
+      watermarks: detectedWatermarks 
+    };
   } catch (error) {
-    return { success: false, error: error.message }
+    console.error("Detect Watermark Error:", error);
+    return { success: false, error: error.message };
   }
-})
+});
 
 ipcMain.handle('remove-watermark', async (event, { videoPath, options }) => {
   try {
