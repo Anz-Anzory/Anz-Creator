@@ -175,7 +175,8 @@ async function findFiles(dir, pattern) {
 async function setupWindows() {
   console.log('\n🪟 Setting up FFmpeg for Windows...');
   
-  const platformDir = path.join(RESOURCES_DIR, 'windows');
+  // FIX: Langsung arahkan ke RESOURCES_DIR, jangan buat sub-folder 'windows'
+  const platformDir = RESOURCES_DIR;
   await ensureDir(platformDir);
   await ensureDir(TEMP_DIR);
   
@@ -244,7 +245,8 @@ async function setupWithChocolatey() {
   try {
     execSync('choco install ffmpeg -y', { stdio: 'inherit', timeout: 300000 });
     
-    const platformDir = path.join(RESOURCES_DIR, 'windows');
+    // FIX: Langsung arahkan ke RESOURCES_DIR
+    const platformDir = RESOURCES_DIR;
     await ensureDir(platformDir);
     
     // Copy from choco install location
@@ -267,7 +269,8 @@ async function setupWithChocolatey() {
 async function setupMac() {
   console.log('\n🍎 Setting up FFmpeg for Mac...');
   
-  const platformDir = path.join(RESOURCES_DIR, 'mac');
+  // FIX: Langsung arahkan ke RESOURCES_DIR
+  const platformDir = RESOURCES_DIR;
   await ensureDir(platformDir);
   
   try {
@@ -297,7 +300,8 @@ async function setupMac() {
 async function setupLinux() {
   console.log('\n🐧 Please install FFmpeg manually:');
   console.log('   sudo apt update && sudo apt install -y ffmpeg');
-  console.log('   Then copy ffmpeg and ffprobe to resources/ffmpeg/linux/');
+  // FIX: Ubah instruksi teks untuk pengguna Linux agar langsung ke resources/ffmpeg/
+  console.log('   Then copy ffmpeg and ffprobe to resources/ffmpeg/');
   throw new Error('Auto-setup not supported on Linux CI. Please use apt.');
 }
 
