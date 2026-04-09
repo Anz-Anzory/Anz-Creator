@@ -158,8 +158,6 @@ ipcMain.handle('detect-watermark', async (event, { videoPath, options = {} }) =>
     const tempDir = require('os').tmpdir()
     const framePath = path.join(tempDir, `frame-${Date.now()}.jpg`)
 
-    const ffmpeg = require('fluent-ffmpeg')
-
     await new Promise((resolve, reject) => {
       ffmpeg(videoPath)
         .screenshots({
@@ -243,7 +241,6 @@ ipcMain.handle('split-long-video', async (event, { videoPath, options }) => {
 // ==========================
 ipcMain.handle('get-video-info', async (event, videoPath) => {
   try {
-    const ffmpeg = require('fluent-ffmpeg')
 
     const metadata = await new Promise((resolve, reject) => {
       ffmpeg.ffprobe(videoPath, (err, data) => {
