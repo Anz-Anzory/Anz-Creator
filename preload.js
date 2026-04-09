@@ -11,7 +11,8 @@ const validChannels = [
   'split-long-video',
   'get-video-info',
   'select-output-dir',
-  'split-progress' // <--- TAMBAHKAN INI
+  'split-progress',
+  'save-file'// <--- TAMBAHKAN INI
 ];
 
 contextBridge.exposeInMainWorld('electron', {
