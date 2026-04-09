@@ -55,26 +55,22 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  // FIX: Daftarkan custom protocol 'media://' untuk bypass keamanan file://
+  // FIX: Daftarkan custom protocol 'media://' dengan format URL yang valid
   protocol.handle('media', (request) => {
-    // Ambil path asli dari URL (hapus 'media://')
-    let filePath = request.url.replace('media://', '')
+    let filePath = request.url.replace('media://', '');
+    filePath = decodeURIComponent(filePath);
     
-    // Di Windows, hapus slash tambahan di awal drive letter (contoh: /C:/ -> C:/)
     if (process.platform === 'win32' && filePath.startsWith('/')) {
-      filePath = filePath.slice(1)
+      filePath = filePath.slice(1);
     }
 
-    // Decode URL (untuk spasi %20 dll)
-    filePath = decodeURIComponent(filePath)
+    // FIX: Gunakan pathToFileURL agar otomatis menjadi 'file:///' yang diizinkan Chromium
+    const fileUrl = require('url').pathToFileURL(filePath).href;
+    return net.fetch(fileUrl);
+  });
 
-    // Kembalikan file menggunakan modul 'net' bawaan Electron
-    return net.fetch('file://' + filePath)
-  })
-
-  // Setelah protocol terdaftar, barulah buat window
-  createWindow()
-})
+  createWindow();
+});
 
 async function initializeServices() {
   const keyStorage = new KeyStorage()
