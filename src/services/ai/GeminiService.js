@@ -25,7 +25,6 @@ class GeminiService {
         const { GoogleGenerativeAI } = require('@google/generative-ai');
         const genAI = new GoogleGenerativeAI(key);
         const result = await operation(genAI);
-        
         console.log(`${operationName} - Success with key ${index + 1}`);
         return result;
         
@@ -33,20 +32,25 @@ class GeminiService {
         lastError = error;
         attempts++;
         
-        if (this.isRateLimitError(error)) {
-          const retryAfter = this.extractRetryAfter(error);
-          this.keyManager.markRateLimited(index, retryAfter);
+        // FIX: Tangani Error 503 (Server High Demand) dengan lebih sabar
+        const isServerBusy = error.message?.includes('503') || error.message?.toLowerCase().includes('high demand');
+        
+        if (this.isRateLimitError(error) || isServerBusy) {
+          // Jika 503, tunggu lebih lama (10 detik) sebelum memutar kunci
+          const waitTime = isServerBusy ? 10000 : this.extractRetryAfter(error);
+          this.keyManager.markRateLimited(index, waitTime);
           
-          console.warn(`Key ${index + 1} rate limited. Attempt ${attempts}/${this.maxRetries}`);
+          console.warn(`[!] Key ${index + 1} terkena Limit / 503 Busy. Menunggu ${waitTime/1000} detik... (Attempt ${attempts}/${this.maxRetries})`);
           
           if (attempts < this.maxRetries) {
             this.keyManager.rotateKey();
+            // Jeda sejenak sebelum mencoba kunci berikutnya
+            await new Promise(res => setTimeout(res, 2000)); 
           }
         } else {
           throw error;
         }
       }
-    }
 
     // FIX: Gunakan optional chaining (?.) untuk mencegah TypeError jika lastError masih kosong
     throw new Error(`${operationName} gagal setelah ${attempts} percobaan. Error: ${lastError?.message || 'Unknown API Error'}`);
