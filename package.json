@@ -77,6 +77,81 @@
       "preload.js",
       "dist/**/*",
       "src/services/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/ffmpeg",
+        "to": "ffmpeg",
+        "filter": [
+          "**/*",
+          "!*.zip",
+          "!*.tar.xz"
+        ]
+      },
+      {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64", "ia32"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "resources/icon.ico",
+      "publisherName": "Anzory",
+      "verifyUpdateCodeSignature": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "resources/icon.icns",
+      "category": "public.app-category.video",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.plist"
+    },
+    "linux": {
+      "target": ["AppImage", "deb", "rpm"],
+      "icon": "resources/icon.png",
+      "category": "AudioVideo",
+      "maintainer": "Anzory",
+      "vendor": "Anzory"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
+      "installerHeaderIcon": "resources/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Anz Video Publisher",
+      "include": "resources/installer.nsh"
+    }
+  }
+    "files": [
+      "main.js",
+      "preload.js",
+      "dist/**/*",
+      "src/services/**/*",
       "src/main/**/*",
       "resources/ffmpeg/**/*",
       "package.json"
