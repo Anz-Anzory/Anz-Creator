@@ -26,7 +26,12 @@ function WatermarkInpaintPanel() {
     }
   };
 
-  const { getRootProps, getInputProps } = useDropzone({ onDrop, accept: 'video/*' });
+  const { getRootProps, getInputProps } = useDropzone({ 
+  onDrop, 
+  accept: {
+    'video/*': ['.mp4', '.avi', '.mov', '.mkv', '.webm']
+  } 
+});
 
   const handleRemoveWatermark = async () => {
     setProcessing(true);
