@@ -118,14 +118,17 @@ class ClipGenerator {
     });
   }
 
-  // ==========================================
+// ==========================================
   // FUNGSI METADATA AI (3-IN-1 JSON)
   // ==========================================
   async generateMetadata(clipPath, plan) {
     const samples = await this.extractSampleFrames(clipPath);
     
-    return this.gemini.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+    // FIX: Tangkap parameter 'modelName' yang dikirim oleh GeminiService (sistem Fallback)
+    return this.gemini.executeWithRotation(async (genAI, modelName) => {
+      
+      // Gunakan nama model hasil putaran dari fallbackModels!
+      const model = genAI.getGenerativeModel({ model: modelName }); 
       
       const prompt = `Analyze these video frames for a ${plan.contentType} short video (FYP Score: ${plan.fypScore}).
       You MUST return the response EXACTLY as a valid JSON object. Do not include markdown code blocks like \`\`\`json.
@@ -140,7 +143,6 @@ class ClipGenerator {
       const result = await model.generateContent([prompt, ...images]);
       
       let textResponse = result.response.text().trim();
-      // Bersihkan sisa-sisa markdown JSON jika AI membandel
       textResponse = textResponse.replace(/^```json/i, '').replace(/```$/i, '').trim();
       
       try {
