@@ -146,7 +146,7 @@ ipcMain.handle('detect-watermark', async (event, { videoPath, options = {} }) =>
   try {
     if (!videoProcessor) await initializeServices()
 
-    const WatermarkDetector = require('./src/services/video/WatermarkDetector')
+    const WatermarkDetector = require('./src/services/watermarkRemover/detector') // Sesuaikan dengan nama file asli di folder Anda
     const detector = new WatermarkDetector(geminiService.apiKeys)
 
     const tempDir = require('os').tmpdir()
