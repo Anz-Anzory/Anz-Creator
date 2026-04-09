@@ -68,28 +68,32 @@ class ThumbnailExtractor {
     return positions.slice(0, count);
   }
 
+  // FIX: Mengganti OpenCV dengan Heuristik Kompresi File 
   async scoreFrameQuality(framePath) {
-    const img = cv.imread(framePath);
-    let score = 50;
-    
-    const faceDetector = new cv.CascadeClassifier(cv.HAAR_FRONTALFACE_DEFAULT);
-    const gray = img.bgrToGray();
-    const faces = faceDetector.detectMultiScale(gray);
-    if (faces.objects.length > 0) score += 20;
-    
-    const laplacian = gray.laplacian(cv.CV_64F);
-    const mean = laplacian.mean();
-    const variance = Math.sqrt(laplacian.hMul(laplacian).mean().z - mean.z * mean.z);
-    if (variance > 100) score += 15;
-    
-    const brightness = gray.mean();
-    if (brightness > 80 && brightness < 200) score += 10;
-    
-    const hsv = img.cvtColor(cv.COLOR_BGR2HSV);
-    const saturation = hsv.extractChannel(1).mean();
-    if (saturation > 50) score += 5;
-    
-    return Math.min(100, score);
+    try {
+      let score = 50; // Skor dasar
+
+      // Mengambil statistik file
+      const stats = await fs.stat(framePath);
+      const fileSizeKB = stats.size / 1024;
+
+      // Gambar JPEG portrait 720x1280 yang tajam dan berwarna biasanya berukuran besar (>80KB).
+      // Gambar blur atau gelap/hitam sangat mudah dikompresi sehingga ukurannya kecil (<30KB).
+      if (fileSizeKB > 120) {
+        score += 40; // Sangat detail / tajam
+      } else if (fileSizeKB > 80) {
+        score += 30; // Kualitas bagus
+      } else if (fileSizeKB > 50) {
+        score += 15; // Kualitas standar
+      } else if (fileSizeKB < 20) {
+        score -= 20; // Kemungkinan besar layar hitam atau sangat blur
+      }
+
+      return Math.min(100, Math.max(0, score)); // Pastikan skor tetap di rentang 0-100
+    } catch (err) {
+      console.warn("Gagal menganalisa kualitas thumbnail:", err.message);
+      return 50; // Fallback jika gagal
+    }
   }
 }
 
