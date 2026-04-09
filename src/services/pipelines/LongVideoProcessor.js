@@ -10,17 +10,19 @@ class LongVideoProcessor {
   }
 
   async process(videoPath, options = {}) {
-    // Fungsi bantuan untuk mengirim persentase dan pesan
-    const reportProgress = (percent, message) => {
-      if (options.onProgress) options.onProgress({ percent, message });
-      console.log(`[${percent}%] ${message}`);
+    // FIX: Mengirim 4 data sekaligus (Progress Total, Progress Bagian, Pesan, Nama Tahapan)
+    const reportProgress = (overallPercent, taskPercent, message, taskName) => {
+      if (options.onProgress) {
+        options.onProgress({ overallPercent, taskPercent, message, taskName });
+      }
+      console.log(`[Total: ${overallPercent}% | Bagian: ${taskPercent}%] ${message}`);
     };
 
     const startTime = Date.now();
     const results = { input: { path: videoPath }, stages: [] };
     
     try {
-      reportProgress(5, 'Mengekstrak frame & menganalisa audio video asli...');
+      reportProgress(5, 10, 'Mengekstrak frame & menganalisa audio video asli...', 'Tahap 1: Analisa Video');
       
       const viralMoments = await this.detector.detectViralMoments(videoPath, {
         minDuration: options.minDuration || 15,
@@ -30,7 +32,7 @@ class LongVideoProcessor {
       });
       
       results.stages.push({ name: 'viral-detection', status: 'complete' });
-      reportProgress(40, `Menemukan ${viralMoments.optimizedClips} momen potensial. Merencanakan pemotongan...`);
+      reportProgress(40, 100, `Menemukan ${viralMoments.optimizedClips} momen potensial. Merencanakan pemotongan...`, 'Tahap 1: Selesai');
       
       const plan = this.planner.createPlan(viralMoments.clips, {
         platform: options.platform || 'tiktok'
@@ -41,19 +43,27 @@ class LongVideoProcessor {
       });
       
       results.stages.push({ name: 'planning', status: 'complete', data: seriesPlan });
-      reportProgress(50, `Memulai AI Rendering untuk ${seriesPlan.totalClips} Klip Video...`);
+      reportProgress(50, 100, `Memulai AI Rendering untuk ${seriesPlan.totalClips} Klip Video...`, 'Tahap 2: Perencanaan Konten');
       
       const clips = await this.generator.generateClips(videoPath, plan, {
         onProgress: (progress) => {
-          // Kalkulasi sisa 50% hingga 100% berdasarkan jumlah klip yang diproses
+          // Kalkulasi Progress Total (berjalan dari 50% sampai 95%)
           const currentPercent = 50 + Math.round((progress.current / progress.total) * 45);
-          reportProgress(currentPercent, `Memotong & Menganalisa Klip AI ${progress.current} dari ${progress.total}...`);
+          // Kalkulasi Progress Per Bagian (berjalan dari 0% sampai 100% per klip)
+          const taskPercent = Math.round((progress.current / progress.total) * 100);
+          
+          reportProgress(
+            currentPercent, 
+            taskPercent, 
+            `Memotong & Menganalisa Klip AI ${progress.current} dari ${progress.total}...`, 
+            'Tahap 3: Pembuatan Klip'
+          );
         }
       });
       
       results.stages.push({ name: 'generation', status: 'complete', clipsGenerated: clips.length });
       
-      reportProgress(100, 'Semua proses selesai! Membersihkan file sampah...');
+      reportProgress(100, 100, 'Semua proses selesai! Membersihkan file sampah...', 'Selesai');
       
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       
@@ -74,7 +84,7 @@ class LongVideoProcessor {
       return results;
       
     } catch (error) {
-      reportProgress(0, `ERROR: ${error.message}`);
+      reportProgress(0, 0, `ERROR: ${error.message}`, 'Proses Gagal');
       throw error;
     } finally {
       await this.detector.cleanup();
