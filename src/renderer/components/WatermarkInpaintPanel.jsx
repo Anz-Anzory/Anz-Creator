@@ -69,7 +69,7 @@ function WatermarkInpaintPanel() {
         <div style={{ marginTop: '1rem' }}>
           <h4>Detection Preview:</h4>
           <img 
-            src={`file://${preview}`} 
+            src={`media://${preview}`} 
             alt="Watermark detection" 
             style={{ maxWidth: '100%', borderRadius: '8px' }}
           />
