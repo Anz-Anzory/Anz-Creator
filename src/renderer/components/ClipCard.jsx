@@ -27,7 +27,8 @@ function ClipCard({ clip }) {
       </div>
       
       <video 
-        src={`file://${clip.videoPath}`} 
+        // FIX: Ubah 'file://' menjadi 'media://' untuk load file lokal
+        src={`media://${clip.videoPath}`} 
         controls 
         style={{ width: '100%', height: '200px', objectFit: 'cover' }}
       />
@@ -42,7 +43,8 @@ function ClipCard({ clip }) {
           {clip.thumbnails?.map((thumb, tidx) => (
             <img 
               key={tidx}
-              src={`file://${thumb.path}`}
+              // FIX: Ubah 'file://' menjadi 'media://' juga di sini
+              src={`media://${thumb.path}`}
               alt={`Thumbnail ${tidx + 1}`}
               className={thumb.rank === 1 ? 'best' : ''}
               title={`Quality: ${thumb.qualityScore}`}
