@@ -288,7 +288,7 @@ class ViralMomentDetector {
       
       try {
         const analysis = await this.gemini.executeWithRotation(async (genAI) => {
-          const model = genAI.getGenerativeModel({ model: 'gemini-pro-vision' });
+          const model = genAI.getGenerativeModel({ model: 'gemini-3-flash' });
           
           const prompt = `Analyze these video frames and rate their VIRAL POTENTIAL for social media short videos (TikTok/Reels/Shorts).
 

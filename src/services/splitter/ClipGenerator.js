@@ -140,7 +140,7 @@ class ClipGenerator {
 
   async generateTitle(frames, plan) {
     return this.gemini.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-pro-vision' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash' });
       
       const prompt = `Create a VIRAL, ATTENTION-GRABBING title for this short video.
 Context: ${plan.contentType}, FYP Score: ${plan.fypScore}/100
@@ -165,7 +165,7 @@ Return ONLY the title, no quotes.`;
 
   async generateCaption(frames, plan) {
     return this.gemini.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-pro-vision' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash' });
       
       const prompt = `Create an engaging social media caption for this video.
 
@@ -192,7 +192,7 @@ Max 150 characters for hook + context.`;
 
   async generateHashtags(frames, plan) {
     return this.gemini.executeWithRotation(async (genAI) => {
-      const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash' });
       
       const prompt = `Generate 15 strategic hashtags for this ${plan.contentType} video.
 FYP Score: ${plan.fypScore}/100
