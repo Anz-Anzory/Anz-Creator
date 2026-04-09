@@ -70,7 +70,7 @@ async function initializeServices() {
 
   if (apiKeys.length > 0) {
     geminiService = new GeminiService(apiKeys)
-    videoProcessor = new VideoProcessor(apiKeys)
+    videoProcessor = VideoProcessor // <--- HAPUS kata "new" dan "(apiKeys)"
     longVideoProcessor = new LongVideoProcessor(apiKeys)
     return true
   }
