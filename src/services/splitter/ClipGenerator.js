@@ -87,11 +87,11 @@ class ClipGenerator {
           '-c:a aac',
           '-strict experimental',
           '-b:a 192k',
-          '-pix_fmt yuv420p',
           '-crf 23',
           '-preset fast',
           '-movflags +faststart',
-          '-vf format=yuv420p'
+          // FIX: Filter ini akan memaksa lebar (iw) dan tinggi (ih) menjadi angka genap agar libx264 tidak crash
+          '-vf scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p'
         ])
         .output(outputPath)
         .on('end', () => resolve(outputPath))
