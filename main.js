@@ -206,6 +206,9 @@ ipcMain.handle('remove-watermark', async (event, { videoPath, options }) => {
   }
 })
 
+// ==========================
+// SPLIT VIDEO
+// ==========================
 ipcMain.handle('split-long-video', async (event, { videoPath, options }) => {
   try {
     if (!longVideoProcessor) {
@@ -214,14 +217,20 @@ ipcMain.handle('split-long-video', async (event, { videoPath, options }) => {
         return { success: false, error: 'No API keys configured or service failed to start' }
       }
     }
+
     const results = await longVideoProcessor.process(videoPath, {
       minDuration: options.minDuration || 15,
       maxDuration: options.maxDuration || 60,
       targetClips: options.targetClips || 10,
       platform: options.platform || 'tiktok',
       seriesName: options.seriesName,
-      detectionStrategy: options.strategy || 'comprehensive'
+      detectionStrategy: options.strategy || 'comprehensive',
+      // FIX: Callback untuk mengirim sinyal progress ke Frontend
+      onProgress: (status) => {
+        event.sender.send('split-progress', status);
+      }
     })
+
     return { success: true, data: results }
   } catch (error) {
     return { success: false, error: error.message }
