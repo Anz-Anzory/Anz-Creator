@@ -13,34 +13,32 @@ class ClipGenerator {
 
   async generateClips(videoPath, clipPlan, options = {}) {
     console.log(`Generating ${clipPlan.length} clips...`);
-    
     await fs.mkdir(this.outputDir, { recursive: true });
-    
     const generatedClips = [];
     
     for (let i = 0; i < clipPlan.length; i++) {
       const plan = clipPlan[i];
-      console.log(`\nProcessing clip ${i + 1}/${clipPlan.length} (FYP: ${plan.fypScore})`);
-      
       try {
-        // FIX: Kirim data sub-percent ke UI secara Realtime
+        // Proses render potongan MP4 dengan pantauan Real-Time
         const clipPath = await this.extractClip(videoPath, plan, i + 1, (percent) => {
           if (options.onProgress) {
             options.onProgress({
               current: i + 1,
               total: clipPlan.length,
-              subPercent: percent, // Metrik realtime
+              subPercent: percent,
               taskName: `Memotong Video ${i + 1}/${clipPlan.length} (${Math.round(percent)}%)`
             });
           }
         });
+
+        // Generate Metadata & Thumbnail
         const metadata = await this.generateMetadata(clipPath, plan);
         const thumbnails = await this.thumbnailExtractor.extractThumbnails(clipPath, plan, { count: 3 });
         const finalFYPScore = await this.calculateFinalFYPScore(plan, metadata);
 
         const generatedClip = {
           id: plan.id,
-          sequence: plan.sequence,
+          sequence: plan.sequence || (i + 1),
           videoPath: clipPath,
           filename: path.basename(clipPath),
           duration: plan.duration,
@@ -68,21 +66,19 @@ class ClipGenerator {
             clip: generatedClip
           });
         }
-        
       } catch (error) {
         console.error(`Failed to generate clip ${plan.id}:`, error.message);
         generatedClips.push({
           id: plan.id,
+          sequence: plan.sequence || (i + 1),
           error: true,
           errorMessage: error.message
         });
       }
     }
-    
     return generatedClips;
   }
 
-  // Tambahkan parameter onProgressCallback
   async extractClip(videoPath, plan, sequence, onProgressCallback) {
     const outputPath = path.join(this.outputDir, `clip-${String(sequence).padStart(3, '0')}-fyp${plan.fypScore}.mp4`);
     
@@ -91,47 +87,49 @@ class ClipGenerator {
         .setStartTime(plan.start)
         .setDuration(plan.duration)
         .outputOptions([
-          '-c:v libx264', '-c:a aac', '-strict experimental', '-b:a 192k',
-          '-crf 23', '-preset fast', '-movflags +faststart',
-          '-vf scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p'
+          '-c:v libx264',
+          '-c:a aac',
+          '-b:a 192k',
+          '-crf 23',
+          '-preset fast',
+          '-movflags +faststart',
+          // FIX: Memisahkan argumen '-vf' agar Windows/FFmpeg tidak error (Kode 4294967274)
+          '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p' 
         ])
-        // FIX: Tangkap event progress Real-Time dari FFMPEG
         .on('progress', (progress) => {
           if (progress.percent && onProgressCallback) {
-            onProgressCallback(progress.percent); // kirim nilai 0-100
+            onProgressCallback(progress.percent);
           }
         })
         .output(outputPath)
         .on('end', () => resolve(outputPath))
-        .on('error', reject)
+        .on('error', (err) => reject(new Error(`FFmpeg Error: ${err.message}`)))
         .run();
     });
   }
 
   async generateMetadata(clipPath, plan) {
     const samples = await this.extractSampleFrames(clipPath);
-    
     const [title, caption, hashtags] = await Promise.all([
       this.generateTitle(samples, plan),
       this.generateCaption(samples, plan),
       this.generateHashtags(samples, plan)
     ]);
-    
     return { title, caption, hashtags };
   }
 
   async extractSampleFrames(clipPath, count = 3) {
     const frames = [];
-    const timestamps = [0.5, 0.5, 0.9];
+    const timestamps = [0.2, 0.5, 0.8]; // Diubah agar sebarannya lebih merata
     
     for (let i = 0; i < count; i++) {
-      const framePath = path.join(this.outputDir, `frame-temp-${i}.jpg`);
+      const framePath = path.join(this.outputDir, `frame-temp-${Date.now()}-${i}.jpg`);
       await new Promise((resolve, reject) => {
         ffmpeg(clipPath)
           .screenshots({
             timestamps: [timestamps[i]],
-            filename: `frame-temp-${i}.jpg`,
-            folder: this.outputDir,
+            filename: path.basename(framePath),
+            folder: path.dirname(framePath),
             size: '720x1280'
           })
           .on('end', resolve)
@@ -140,32 +138,20 @@ class ClipGenerator {
       
       const base64 = await fs.readFile(framePath, { encoding: 'base64' });
       frames.push({ path: framePath, base64, index: i });
-      await fs.unlink(framePath);
+      await fs.unlink(framePath).catch(() => {});
     }
-    
     return frames;
   }
 
+  // Menggunakan Gemini 3 Flash Preview (Super Cepat & Bebas Limit)
   async generateTitle(frames, plan) {
     return this.gemini.executeWithRotation(async (genAI) => {
       const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
-      
       const prompt = `Create a VIRAL, ATTENTION-GRABBING title for this short video.
-Context: ${plan.contentType}, FYP Score: ${plan.fypScore}/100
-Key moment: ${plan.keyMoments?.[0] || 'Interesting content'}
-
-Rules:
-- Max 60 characters
-- Use power words (Amazing, Shocking, Secret, Ultimate, etc.)
-- Create curiosity gap
-- No clickbait that doesn't deliver
-
-Return ONLY the title, no quotes.`;
-
-      const images = frames.map(f => ({
-        inlineData: { data: f.base64, mimeType: 'image/jpeg' }
-      }));
-
+      Context: ${plan.contentType}, FYP Score: ${plan.fypScore}/100
+      Key moment: ${plan.keyMoments?.[0] || 'Interesting content'}
+      Rules: Max 60 chars, power words. Return ONLY the title without quotes.`;
+      const images = frames.map(f => ({ inlineData: { data: f.base64, mimeType: 'image/jpeg' } }));
       const result = await model.generateContent([prompt, ...images]);
       return result.response.text().trim().replace(/^["']|["']$/g, '');
     }, 'Title Generation');
@@ -174,25 +160,10 @@ Return ONLY the title, no quotes.`;
   async generateCaption(frames, plan) {
     return this.gemini.executeWithRotation(async (genAI) => {
       const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
-      
       const prompt = `Create an engaging social media caption for this video.
-
-Content Type: ${plan.contentType}
-Video Duration: ${plan.duration}s
-
-Structure:
-Line 1: HOOK (stop the scroll - max 8 words)
-Line 2-3: CONTEXT/VALUE (what's in the video)
-Line 4: CTA (comment, follow, save, share)
-Line 5: (optional) Series info if part ${plan.seriesInfo?.part} of ${plan.seriesInfo?.total}
-
-Use emojis naturally. Add line breaks.
-Max 150 characters for hook + context.`;
-
-      const images = frames.map(f => ({
-        inlineData: { data: f.base64, mimeType: 'image/jpeg' }
-      }));
-
+      Content Type: ${plan.contentType} | Duration: ${plan.duration}s
+      Structure: Hook, Context, CTA. Emojis. Max 150 chars for hook.`;
+      const images = frames.map(f => ({ inlineData: { data: f.base64, mimeType: 'image/jpeg' } }));
       const result = await model.generateContent([prompt, ...images]);
       return result.response.text().trim();
     }, 'Caption Generation');
@@ -201,21 +172,9 @@ Max 150 characters for hook + context.`;
   async generateHashtags(frames, plan) {
     return this.gemini.executeWithRotation(async (genAI) => {
       const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
-      
-      const prompt = `Generate 15 strategic hashtags for this ${plan.contentType} video.
-FYP Score: ${plan.fypScore}/100
-
-Mix:
-- 5 broad trending (#fyp #viral #trending)
-- 5 niche-specific (relevant to content)
-- 5 community tags (target audience)
-
-Return ONLY hashtags separated by spaces.`;
-
+      const prompt = `Generate 15 strategic hashtags for this ${plan.contentType} video. Mix broad, niche, community. Return ONLY hashtags separated by spaces.`;
       const result = await model.generateContent(prompt);
-      const text = result.response.text();
-      const hashtags = text.match(/#\w+/g) || [];
-      return hashtags.slice(0, 15);
+      return result.response.text().match(/#\w+/g) || [];
     }, 'Hashtag Generation');
   }
 
@@ -228,9 +187,7 @@ Return ONLY hashtags separated by spaces.`;
   }
 
   async cleanup() {
-    try {
-      await fs.rm(this.outputDir, { recursive: true, force: true });
-    } catch {}
+    try { await fs.rm(this.outputDir, { recursive: true, force: true }); } catch {}
   }
 }
 
