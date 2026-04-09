@@ -5,7 +5,15 @@ import ClipCard from './ClipCard';
 function VideoSplitterPanel() {
   const [video, setVideo] = useState(null);
   const [processing, setProcessing] = useState(false);
-  const [progressData, setProgressData] = useState({ percent: 0, message: '' }); // FIX: State progress
+  
+  // FIX: State untuk menyimpan 2 metrik progress secara terpisah
+  const [progressData, setProgressData] = useState({ 
+    overallPercent: 0, 
+    taskPercent: 0, 
+    message: '', 
+    taskName: '' 
+  });
+  
   const [results, setResults] = useState(null);
 
   const [options, setOptions] = useState({
@@ -17,10 +25,14 @@ function VideoSplitterPanel() {
     strategy: 'comprehensive'
   });
 
-  // FIX: Tangkap event progress dari backend Electron secara realtime
   useEffect(() => {
     const handleProgress = (data) => {
-      setProgressData(data);
+      setProgressData({
+        overallPercent: data.overallPercent || 0,
+        taskPercent: data.taskPercent || 0,
+        message: data.message || '',
+        taskName: data.taskName || ''
+      });
     };
 
     window.electron.ipcRenderer.on('split-progress', handleProgress);
@@ -56,7 +68,7 @@ function VideoSplitterPanel() {
     if (!video) return;
 
     setProcessing(true);
-    setProgressData({ percent: 0, message: 'Menyiapkan mesin AI...' }); // Reset text awal
+    setProgressData({ overallPercent: 0, taskPercent: 0, message: 'Menyiapkan mesin AI...', taskName: 'Inisialisasi' });
 
     try {
       const result = await window.electron.ipcRenderer.invoke('split-long-video', {
@@ -65,16 +77,16 @@ function VideoSplitterPanel() {
       });
 
       if (result.success) {
-        setProgressData({ percent: 100, message: 'Selesai!' });
+        setProgressData({ overallPercent: 100, taskPercent: 100, message: 'Selesai merender klip!', taskName: 'Selesai' });
         setResults(result.data);
       } else {
         alert('Error: ' + result.error);
-        setProgressData({ percent: 0, message: 'Gagal diproses.' });
+        setProgressData({ overallPercent: 0, taskPercent: 0, message: 'Gagal diproses.', taskName: 'Error' });
       }
     } catch (err) {
       console.error(err);
       alert('Terjadi error saat processing');
-      setProgressData({ percent: 0, message: 'Error system.' });
+      setProgressData({ overallPercent: 0, taskPercent: 0, message: 'Error system.', taskName: 'Error' });
     }
 
     setProcessing(false);
@@ -140,22 +152,47 @@ function VideoSplitterPanel() {
         </div>
       )}
 
-      {/* FIX: TAMPILAN PROGRESS BAR */}
+      {/* FIX: TAMPILAN 2 LAPIS PROGRESS BAR */}
       {processing && (
-        <div className="progress-container" style={{ marginTop: '2rem', padding: '1rem', background: 'rgba(0,0,0,0.05)', borderRadius: '8px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            <span>⏳ {progressData.message}</span>
-            <span style={{ color: '#4f46e5' }}>{progressData.percent}%</span>
+        <div className="progress-container" style={{ marginTop: '2rem', padding: '1.5rem', background: 'rgba(0,0,0,0.03)', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.08)' }}>
+          
+          {/* Progress 1: Keseluruhan (Warna Biru) */}
+          <div style={{ marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+              <span>Total Progress Keseluruhan</span>
+              <span style={{ color: '#4f46e5' }}>{progressData.overallPercent}%</span>
+            </div>
+            <div style={{ width: '100%', backgroundColor: '#e2e8f0', borderRadius: '8px', height: '14px', overflow: 'hidden' }}>
+              <div
+                style={{
+                  width: `${progressData.overallPercent}%`,
+                  background: 'linear-gradient(90deg, #4f46e5 0%, #3b82f6 100%)',
+                  height: '100%',
+                  transition: 'width 0.4s ease-in-out'
+                }}
+              />
+            </div>
           </div>
-          <div style={{ width: '100%', backgroundColor: '#e2e8f0', borderRadius: '8px', height: '12px', overflow: 'hidden' }}>
-            <div
-              style={{
-                width: `${progressData.percent}%`,
-                background: 'linear-gradient(90deg, #4f46e5 0%, #3b82f6 100%)',
-                height: '100%',
-                transition: 'width 0.4s ease-in-out'
-              }}
-            />
+
+          {/* Progress 2: Per Bagian / Sub-Task (Warna Hijau) */}
+          <div style={{ padding: '1rem', background: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem', color: '#475569', fontWeight: '500' }}>
+              <span>
+                {progressData.taskName && <strong style={{color: '#1e293b', marginRight: '6px'}}>[{progressData.taskName}]</strong>} 
+                ⏳ {progressData.message}
+              </span>
+              <span style={{ color: '#10b981', fontWeight: 'bold' }}>{progressData.taskPercent}%</span>
+            </div>
+            <div style={{ width: '100%', backgroundColor: '#f1f5f9', borderRadius: '6px', height: '8px', overflow: 'hidden' }}>
+              <div
+                style={{
+                  width: `${progressData.taskPercent}%`,
+                  background: 'linear-gradient(90deg, #10b981 0%, #34d399 100%)',
+                  height: '100%',
+                  transition: 'width 0.4s ease-in-out'
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
