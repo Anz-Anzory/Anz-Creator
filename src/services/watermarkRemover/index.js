@@ -120,10 +120,11 @@ async function processVideo(inputVideo, options = {}) {
 
         // Overlay kembali ke frame asli
         await overlayBack(currentFramePath, cleanedPath, outputPath, area);
-
         currentFramePath = outputPath;
+        lastSuccessPath = outputPath;
       } catch (err) {
         console.warn(`⚠️ Gagal proses watermark ${w} di frame ${i}:`, err.message);
+        currentFramePath = lastSuccessPath; // Fallback ke frame terakhir yang berhasil
       }
     }
 
