@@ -2,10 +2,10 @@ import React from 'react';
 
 function FYPScore({ score }) {
   const getScoreColor = (value) => {
-    if (value >= 90) return '#4ade80'; // green
-    if (value >= 75) return '#667eea'; // purple
-    if (value >= 60) return '#fbbf24'; // yellow
-    return '#ef4444'; // red
+    if (value >= 90) return '#4ade80';
+    if (value >= 75) return '#667eea';
+    if (value >= 60) return '#fbbf24';
+    return '#ef4444';
   };
 
   const getScoreLabel = (value) => {
@@ -21,10 +21,7 @@ function FYPScore({ score }) {
   return (
     <div className="card" style={{ textAlign: 'center' }}>
       <h3>FYP Score</h3>
-      <div 
-        className="fyp-score" 
-        style={{ color: color, fontSize: '3rem' }}
-      >
+      <div className="fyp-score" style={{ color: color, fontSize: '3rem' }}>
         {value}
       </div>
       <p style={{ color: color }}>{getScoreLabel(value)}</p>
