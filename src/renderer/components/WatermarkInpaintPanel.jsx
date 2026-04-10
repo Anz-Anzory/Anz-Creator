@@ -7,48 +7,66 @@ function WatermarkInpaintPanel() {
   const [detectedWatermarks, setDetectedWatermarks] = useState([]);
   const [processing, setProcessing] = useState(false);
   const [preview, setPreview] = useState(null);
+  const [error, setError] = useState(null);
 
   const onDrop = async (files) => {
     const file = files[0];
+    if (!file) return;
+    
     setVideo(file);
     setDetectedWatermarks([]);
     setPreview(null);
+    setError(null);
     
     setDetecting(true);
-    const result = await window.electron.ipcRenderer.invoke('detect-watermark', {
-      videoPath: file.path
-    });
-    setDetecting(false);
-    
-    if (result.success) {
-      setDetectedWatermarks(result.watermarks || []);
-      setPreview(result.preview);
+    try {
+      const result = await window.electron.ipcRenderer.invoke('detect-watermark', {
+        videoPath: file.path
+      });
+      
+      if (result.success) {
+        setDetectedWatermarks(result.watermarks || []);
+        setPreview(result.preview);
+      } else {
+        setError(result.error || 'Deteksi gagal');
+      }
+    } catch (err) {
+      setError(err.message);
     }
+    setDetecting(false);
   };
 
   const { getRootProps, getInputProps } = useDropzone({ 
-  onDrop, 
-  accept: {
-    'video/*': ['.mp4', '.avi', '.mov', '.mkv', '.webm']
-  } 
-});
+    onDrop, 
+    accept: {
+      'video/*': ['.mp4', '.avi', '.mov', '.mkv', '.webm']
+    },
+    multiple: false
+  });
 
   const handleRemoveWatermark = async () => {
     setProcessing(true);
+    setError(null);
     
-    const result = await window.electron.ipcRenderer.invoke('remove-watermark', {
-      videoPath: video.path,
-      options: {
-        method: 'hybrid',
-        outputPath: video.path.replace('.mp4', '_no-watermark.mp4')
+    try {
+      const result = await window.electron.ipcRenderer.invoke('remove-watermark', {
+        videoPath: video.path,
+        options: {
+          method: 'hybrid',
+          outputPath: video.path.replace(/(\.\w+)$/, '_no-watermark$1')
+        }
+      });
+      
+      if (result.success) {
+        alert('✅ Watermark berhasil dihapus! Disimpan di: ' + result.result.finalPath);
+      } else {
+        setError(result.error || 'Penghapusan gagal');
       }
-    });
+    } catch (err) {
+      setError(err.message);
+    }
     
     setProcessing(false);
-    
-    if (result.success) {
-      alert('Watermark removed! Saved to: ' + result.result.finalPath);
-    }
   };
 
   return (
@@ -58,16 +76,22 @@ function WatermarkInpaintPanel() {
         {video ? (
           <div>
             <p>📹 {video.name}</p>
-            {detecting && <p>🔍 Detecting watermarks...</p>}
+            {detecting && <p>🔍 Mendeteksi watermark...</p>}
           </div>
         ) : (
-          <p>Drop video with watermark</p>
+          <p>Drop video yang ada watermark-nya</p>
         )}
       </div>
 
+      {error && (
+        <div className="card" style={{ borderLeft: '4px solid #ef4444', marginTop: '1rem' }}>
+          <p style={{ color: '#ef4444' }}>❌ {error}</p>
+        </div>
+      )}
+
       {preview && (
         <div style={{ marginTop: '1rem' }}>
-          <h4>Detection Preview:</h4>
+          <h4>Preview Deteksi:</h4>
           <img 
             src={`media://${preview}`} 
             alt="Watermark detection" 
@@ -78,7 +102,7 @@ function WatermarkInpaintPanel() {
 
       {detectedWatermarks.length > 0 && (
         <div className="detection-results" style={{ marginTop: '1rem' }}>
-          <h3>🔍 Detected Watermarks ({detectedWatermarks.length})</h3>
+          <h3>🔍 Watermark Terdeteksi ({detectedWatermarks.length})</h3>
           {detectedWatermarks.map((wm, idx) => (
             <div key={idx} className="card" style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>{wm.type} - {wm.position}</span>
@@ -92,13 +116,13 @@ function WatermarkInpaintPanel() {
             className="btn-primary"
             style={{ marginTop: '1rem', width: '100%' }}
           >
-            {processing ? 'Removing...' : '✨ Remove Watermarks'}
+            {processing ? '⏳ Menghapus...' : '✨ Hapus Watermark'}
           </button>
         </div>
       )}
 
-      {detectedWatermarks.length === 0 && video && !detecting && (
-        <p style={{ marginTop: '1rem', color: '#4ade80' }}>✅ No watermarks detected!</p>
+      {detectedWatermarks.length === 0 && video && !detecting && !error && (
+        <p style={{ marginTop: '1rem', color: '#4ade80' }}>✅ Tidak ada watermark terdeteksi!</p>
       )}
     </div>
   );
