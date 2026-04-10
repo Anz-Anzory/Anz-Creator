@@ -1,10 +1,14 @@
 const ffmpeg = require('fluent-ffmpeg');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
 
 class ThumbnailExtractor {
   constructor() {
-    this.tempDir = path.join(require('os').tmpdir(), 'thumbnails');
+    // FIX: Simpan thumbnail di folder yang SAMA dengan generated-clips
+    // Sebelumnya di os.tmpdir()/thumbnails/ — bisa dihapus OS kapan saja
+    // dan path berbeda dari clip sehingga sulit di-track
+    this.tempDir = path.join(require('os').tmpdir(), 'generated-clips', 'thumbnails');
   }
 
   async extractThumbnails(clipPath, plan, options = {}) {
@@ -13,90 +17,136 @@ class ThumbnailExtractor {
     
     await fs.mkdir(this.tempDir, { recursive: true });
     
-    const positions = this.calculateThumbnailPositions(plan, count);
+    // FIX: Hitung posisi berdasarkan durasi CLIP, bukan plan.duration
+    // plan.duration bisa berbeda dari durasi file clip sebenarnya
+    const clipDuration = await this.getClipDuration(clipPath);
+    const positions = this.calculateThumbnailPositions(clipDuration, plan, count);
     
     for (let i = 0; i < positions.length; i++) {
       const timestamp = positions[i];
-      const framePath = path.join(this.tempDir, `thumb-${plan.id}-${i}-${Date.now()}.jpg`);
+      // Nama file unik per clip+index (tanpa Date.now agar stabil)
+      const thumbName = `thumb-${plan.id}-${i}.jpg`;
       
       try {
-        await new Promise((resolve, reject) => {
-          ffmpeg(clipPath)
-            .screenshots({
-              timestamps: [timestamp],
-              filename: path.basename(framePath),
-              folder: this.tempDir,
-              size: '720x1280'
-            })
-            .on('end', resolve)
-            .on('error', reject);
-        });
+        // FIX: Gunakan seek + output frame tunggal (lebih reliable dari .screenshots())
+        // .screenshots() kadang menyimpan dengan nama file berbeda dari yang kita harapkan
+        const outputPath = path.join(this.tempDir, thumbName);
         
-        const qualityScore = await this.scoreFrameQuality(framePath);
+        await this.captureFrame(clipPath, timestamp, outputPath);
+        
+        // FIX: Verifikasi file BENAR-BENAR ada setelah capture
+        if (!fsSync.existsSync(outputPath)) {
+          console.warn(`⚠️ Thumbnail ${thumbName} tidak terbuat, skip`);
+          continue;
+        }
+        
+        const stats = await fs.stat(outputPath);
+        if (stats.size < 100) {
+          // File terlalu kecil = kemungkinan corrupt/kosong
+          console.warn(`⚠️ Thumbnail ${thumbName} terlalu kecil (${stats.size} bytes), skip`);
+          await fs.unlink(outputPath).catch(() => {});
+          continue;
+        }
+        
+        const qualityScore = await this.scoreFrameQuality(outputPath);
         
         thumbnails.push({
-          path: framePath,
+          path: outputPath,
           timestamp,
           qualityScore,
           rank: i + 1
         });
       } catch (err) {
-        console.warn(`Gagal ekstrak thumbnail ${i}:`, err.message);
+        console.warn(`Gagal ekstrak thumbnail ${i} di ${timestamp}s:`, err.message);
       }
     }
     
-    // Sort berdasarkan kualitas, rank ulang
+    // Sort berdasarkan kualitas
     thumbnails.sort((a, b) => b.qualityScore - a.qualityScore);
     thumbnails.forEach((t, i) => t.rank = i + 1);
     
     return thumbnails;
   }
 
-  calculateThumbnailPositions(plan, count) {
-    const duration = plan.duration || 30;
+  // FIX: Gunakan -ss + -frames:v 1 (paling reliable untuk capture frame tunggal)
+  // .screenshots() dari fluent-ffmpeg sering bermasalah dengan naming
+  captureFrame(videoPath, timestamp, outputPath) {
+    return new Promise((resolve, reject) => {
+      ffmpeg(videoPath)
+        .seekInput(timestamp)
+        .frames(1)
+        .outputOptions([
+          '-vf', 'scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2',
+          '-q:v', '2'
+        ])
+        .output(outputPath)
+        .on('end', resolve)
+        .on('error', (err) => reject(new Error(`Capture frame gagal: ${err.message}`)))
+        .run();
+    });
+  }
+
+  // FIX: Ambil durasi clip sebenarnya dari file
+  getClipDuration(clipPath) {
+    return new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(clipPath, (err, metadata) => {
+        if (err) {
+          resolve(30); // Default 30 detik jika gagal
+        } else {
+          resolve(parseFloat(metadata.format.duration) || 30);
+        }
+      });
+    });
+  }
+
+  calculateThumbnailPositions(clipDuration, plan, count) {
+    const duration = clipDuration || plan.duration || 30;
     const positions = [];
     
-    // Posisi 1: Dekat awal (hook)
-    positions.push(Math.min(3, duration * 0.1));
+    // FIX: Pastikan semua posisi DALAM durasi clip (bukan di luar)
+    // Sebelumnya bisa request timestamp > durasi clip → FFmpeg gagal
+    const safeDuration = Math.max(duration - 0.5, 1); // Kurangi 0.5 detik dari akhir
+    
+    // Posisi 1: Dekat awal (hook) — 10% atau max 3 detik
+    positions.push(Math.min(3, safeDuration * 0.1));
     
     // Posisi 2: Tengah
-    positions.push(duration * 0.5);
+    if (count >= 2) {
+      positions.push(safeDuration * 0.5);
+    }
     
-    // Posisi 3: Key moment atau akhir
-    if (plan.keyMoments && plan.keyMoments.length > 0) {
-      const match = plan.keyMoments[0].match(/(\d+)s/);
-      if (match) {
-        positions.push(parseInt(match[1]));
+    // Posisi 3: Menjelang akhir
+    if (count >= 3) {
+      if (plan.keyMoments && plan.keyMoments.length > 0) {
+        const match = plan.keyMoments[0].match(/(\d+)s/);
+        if (match) {
+          const keyTime = parseInt(match[1]);
+          // Pastikan key moment dalam durasi clip
+          positions.push(Math.min(keyTime, safeDuration * 0.9));
+        } else {
+          positions.push(safeDuration * 0.8);
+        }
       } else {
-        positions.push(duration * 0.8);
+        positions.push(safeDuration * 0.8);
       }
-    } else {
-      positions.push(duration * 0.8);
     }
     
     return positions.slice(0, count);
   }
 
-  // Skor kualitas berdasarkan ukuran file (heuristik kompresi)
   async scoreFrameQuality(framePath) {
     try {
       let score = 50;
       const stats = await fs.stat(framePath);
       const fileSizeKB = stats.size / 1024;
 
-      if (fileSizeKB > 120) {
-        score += 40; // Sangat detail/tajam
-      } else if (fileSizeKB > 80) {
-        score += 30; // Kualitas bagus
-      } else if (fileSizeKB > 50) {
-        score += 15; // Kualitas standar
-      } else if (fileSizeKB < 20) {
-        score -= 20; // Kemungkinan layar hitam/blur
-      }
+      if (fileSizeKB > 120) score += 40;
+      else if (fileSizeKB > 80) score += 30;
+      else if (fileSizeKB > 50) score += 15;
+      else if (fileSizeKB < 20) score -= 20;
 
       return Math.min(100, Math.max(0, score));
     } catch (err) {
-      console.warn("Gagal analisa kualitas thumbnail:", err.message);
       return 50;
     }
   }
