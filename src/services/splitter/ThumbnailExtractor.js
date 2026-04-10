@@ -70,15 +70,16 @@ class ThumbnailExtractor {
 
   // FIX: Gunakan -ss + -frames:v 1 (paling reliable untuk capture frame tunggal)
   // .screenshots() dari fluent-ffmpeg sering bermasalah dengan naming
-  captureFrame(videoPath, timestamp, outputPath) {
+  captureFrame(videoPath, timestamp, outputPath, isPortrait = true) {
+    const size = isPortrait 
+      ? 'scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2'
+      : 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2';
+    
     return new Promise((resolve, reject) => {
       ffmpeg(videoPath)
         .seekInput(timestamp)
         .frames(1)
-        .outputOptions([
-          '-vf', 'scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2',
-          '-q:v', '2'
-        ])
+        .outputOptions(['-vf', size, '-q:v', '2'])
         .output(outputPath)
         .on('end', resolve)
         .on('error', (err) => reject(new Error(`Capture frame gagal: ${err.message}`)))
