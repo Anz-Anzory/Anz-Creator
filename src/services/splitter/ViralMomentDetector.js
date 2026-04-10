@@ -326,8 +326,24 @@ class ViralMomentDetector {
   
   async analyzeViralPotential(sceneSamples) {
     const scores = [];
+    let aiAvailable = true; // FIX: Flag untuk skip AI jika kuota habis
     
     for (const sample of sceneSamples) {
+      // FIX: Jika AI sudah diketahui tidak tersedia, langsung gunakan skor default
+      // Tidak perlu buang waktu mencoba API yang pasti gagal
+      if (!aiAvailable) {
+        console.log(`⏭️ Skip AI scene ${sample.sceneId} (kuota habis, gunakan skor default)`);
+        scores.push({
+          sceneId: sample.scene.id,
+          scene: sample.scene,
+          scores: { contentType: 'entertainment' },
+          overallScore: 60, // Skor default lebih tinggi dari 50 agar tetap masuk klip
+          error: false,
+          offlineMode: true
+        });
+        continue;
+      }
+
       const frameBase64s = sample.frames.map(f => f.base64);
       
       try {
@@ -400,11 +416,24 @@ Return ONLY valid JSON (no markdown code blocks):
         
       } catch (error) {
         console.warn(`Analisa gagal untuk scene ${sample.sceneId}:`, error.message);
+        
+        // FIX: Deteksi apakah ini error kuota harian
+        // Jika iya, langsung tandai AI tidak tersedia agar scene berikutnya di-skip
+        const errMsg = error.message || '';
+        const isQuotaExhausted = errMsg.includes('kuota harian') || 
+                                  errMsg.includes('limit: 0') || 
+                                  errMsg.includes('kehabisan kuota');
+        
+        if (isQuotaExhausted) {
+          console.warn(`🚫 Kuota AI habis! Scene sisanya akan diproses tanpa AI.`);
+          aiAvailable = false;
+        }
+        
         scores.push({
           sceneId: sample.scene.id,
           scene: sample.scene,
           scores: {},
-          overallScore: 50,
+          overallScore: 60,
           error: true,
           errorMessage: error.message
         });
