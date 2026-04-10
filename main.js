@@ -275,15 +275,13 @@ ipcMain.handle('detect-watermark', async (event, { videoPath, options = {} }) =>
 
 ipcMain.handle('remove-watermark', async (event, { videoPath, options }) => {
   try {
-    if (!videoProcessor) await initializeServices()
+    if (!videoProcessor) {
+      const initialized = await initializeServices();
+      if (!initialized || !videoProcessor) {
+        return { success: false, error: 'API key belum dikonfigurasi. Silakan tambahkan di Settings.' };
+      }
+    }
     const result = await videoProcessor.processVideo(videoPath, {
-      removeWatermark: true,
-      inpaintMethod: options.method || 'hybrid',
-      outputPath: options.outputPath
-    })
-    return { success: true, result }
-  } catch (error) {
-    return { success: false, error: error.message }
   }
 })
 
