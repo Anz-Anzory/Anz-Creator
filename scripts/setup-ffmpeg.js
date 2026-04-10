@@ -7,7 +7,6 @@ const fsSync = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-// Configuration
 const CONFIG = {
   windows: {
     url: 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',
@@ -36,9 +35,7 @@ async function cleanupFile(filePath) {
     if (fsSync.existsSync(filePath)) {
       fsSync.unlinkSync(filePath);
     }
-  } catch (e) {
-    // Ignore cleanup errors
-  }
+  } catch (e) {}
 }
 
 async function downloadFile(url, dest, label = 'Downloading') {
@@ -46,7 +43,6 @@ async function downloadFile(url, dest, label = 'Downloading') {
   console.log(`   From: ${url.substring(0, 80)}...`);
   console.log(`   To: ${dest}`);
   
-  // Clean up existing file first
   await cleanupFile(dest);
   
   return new Promise((resolve, reject) => {
@@ -75,7 +71,6 @@ async function downloadFile(url, dest, label = 'Downloading') {
         file.destroy();
         cleanupFile(dest);
         
-        // Handle relative redirects
         const finalUrl = redirectUrl.startsWith('http') 
           ? redirectUrl 
           : new URL(redirectUrl, url).toString();
@@ -107,7 +102,6 @@ async function downloadFile(url, dest, label = 'Downloading') {
       });
       
       response.pipe(file);
-      
       response.on('error', cleanupAndReject);
       
       file.on('finish', () => {
@@ -134,7 +128,7 @@ async function extractZip(zipPath, extractTo) {
     console.log('   ✅ Extracted (adm-zip)');
     return;
   } catch (e) {
-    console.log('   ⚠️ adm-zip failed, trying PowerShell...');
+    console.log('   ⚠️ adm-zip gagal, mencoba PowerShell...');
     try {
       execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extractTo}' -Force"`, { 
         stdio: 'inherit',
@@ -142,7 +136,7 @@ async function extractZip(zipPath, extractTo) {
       });
       console.log('   ✅ Extracted (PowerShell)');
     } catch (err) {
-      throw new Error('Failed to extract ZIP');
+      throw new Error('Gagal mengekstrak ZIP');
     }
   }
 }
@@ -163,9 +157,7 @@ async function findFiles(dir, pattern) {
           files.push(fullPath);
         }
       }
-    } catch (e) {
-      // Ignore errors reading directories
-    }
+    } catch (e) {}
   }
   
   await scan(dir);
@@ -173,9 +165,8 @@ async function findFiles(dir, pattern) {
 }
 
 async function setupWindows() {
-  console.log('\n🪟 Setting up FFmpeg for Windows...');
+  console.log('\n🪟 Setup FFmpeg untuk Windows...');
   
-  // FIX: Langsung arahkan ke RESOURCES_DIR, jangan buat sub-folder 'windows'
   const platformDir = RESOURCES_DIR;
   await ensureDir(platformDir);
   await ensureDir(TEMP_DIR);
@@ -183,39 +174,34 @@ async function setupWindows() {
   const zipPath = path.join(TEMP_DIR, 'ffmpeg.zip');
   let downloadSuccess = false;
   
-  // Try primary source
   try {
     await downloadFile(CONFIG.windows.url, zipPath, 'Downloading FFmpeg (Primary)');
     downloadSuccess = true;
   } catch (error) {
-    console.log('   ⚠️ Primary source failed:', error.message);
+    console.log('   ⚠️ Source utama gagal:', error.message);
   }
   
-  // Try fallback if primary failed
   if (!downloadSuccess) {
-    console.log('   🔄 Trying fallback source...');
+    console.log('   🔄 Mencoba source cadangan...');
     try {
       await downloadFile(CONFIG.windows.fallbackUrl, zipPath, 'Downloading FFmpeg (Fallback)');
       downloadSuccess = true;
     } catch (error) {
-      throw new Error(`Both download sources failed: ${error.message}`);
+      throw new Error(`Kedua source download gagal: ${error.message}`);
     }
   }
   
-  // Extract
   await extractZip(zipPath, TEMP_DIR);
   
-  // Find binaries
-  console.log('🔍 Locating binaries...');
+  console.log('🔍 Mencari binary...');
   const ffmpegExe = await findFiles(TEMP_DIR, /ffmpeg\.exe$/i);
   
   if (ffmpegExe.length === 0) {
-    throw new Error('ffmpeg.exe not found in extracted archive');
+    throw new Error('ffmpeg.exe tidak ditemukan dalam arsip');
   }
   
   const sourceDir = path.dirname(ffmpegExe[0]);
   
-  // Copy binaries
   for (const binary of CONFIG.windows.binaries) {
     const source = path.join(sourceDir, binary);
     const dest = path.join(platformDir, binary);
@@ -224,11 +210,10 @@ async function setupWindows() {
       fsSync.copyFileSync(source, dest);
       console.log(`   ✅ ${binary}`);
     } else {
-      console.log(`   ⚠️ ${binary} not found`);
+      console.log(`   ⚠️ ${binary} tidak ditemukan`);
     }
   }
   
-  // Verify
   try {
     const result = execSync(`"${path.join(platformDir, 'ffmpeg.exe')}" -version`, { 
       encoding: 'utf8',
@@ -236,46 +221,19 @@ async function setupWindows() {
     });
     console.log(`   Version: ${result.split('\n')[0]}`);
   } catch (e) {
-    console.log('   ⚠️ Verification skipped');
-  }
-}
-
-async function setupWithChocolatey() {
-  console.log('📦 Trying Chocolatey...');
-  try {
-    execSync('choco install ffmpeg -y', { stdio: 'inherit', timeout: 300000 });
-    
-    // FIX: Langsung arahkan ke RESOURCES_DIR
-    const platformDir = RESOURCES_DIR;
-    await ensureDir(platformDir);
-    
-    // Copy from choco install location
-    const chocoPath = 'C:\\ProgramData\\chocolatey\\bin';
-    for (const binary of CONFIG.windows.binaries) {
-      const source = path.join(chocoPath, binary);
-      const dest = path.join(platformDir, binary);
-      if (fsSync.existsSync(source)) {
-        fsSync.copyFileSync(source, dest);
-        console.log(`   ✅ ${binary} (from Chocolatey)`);
-      }
-    }
-    return true;
-  } catch (e) {
-    console.log('   ⚠️ Chocolatey failed:', e.message);
-    return false;
+    console.log('   ⚠️ Verifikasi dilewati');
   }
 }
 
 async function setupMac() {
-  console.log('\n🍎 Setting up FFmpeg for Mac...');
+  console.log('\n🍎 Setup FFmpeg untuk Mac...');
   
-  // FIX: Langsung arahkan ke RESOURCES_DIR
   const platformDir = RESOURCES_DIR;
   await ensureDir(platformDir);
   
   try {
     execSync('which brew', { stdio: 'pipe' });
-    console.log('✅ Installing via Homebrew...');
+    console.log('✅ Install via Homebrew...');
     execSync('brew install ffmpeg', { stdio: 'inherit', timeout: 300000 });
     
     const brewPrefix = execSync('brew --prefix', { encoding: 'utf8' }).trim();
@@ -292,17 +250,16 @@ async function setupMac() {
       }
     }
   } catch (e) {
-    console.log('⚠️ Setup failed:', e.message);
+    console.log('⚠️ Setup gagal:', e.message);
     throw e;
   }
 }
 
 async function setupLinux() {
-  console.log('\n🐧 Please install FFmpeg manually:');
+  console.log('\n🐧 Silakan install FFmpeg secara manual:');
   console.log('   sudo apt update && sudo apt install -y ffmpeg');
-  // FIX: Ubah instruksi teks untuk pengguna Linux agar langsung ke resources/ffmpeg/
-  console.log('   Then copy ffmpeg and ffprobe to resources/ffmpeg/');
-  throw new Error('Auto-setup not supported on Linux CI. Please use apt.');
+  console.log('   Lalu salin ffmpeg dan ffprobe ke resources/ffmpeg/');
+  throw new Error('Auto-setup tidak didukung di Linux CI. Gunakan apt.');
 }
 
 async function main() {
@@ -311,7 +268,6 @@ async function main() {
   console.log(`Platform: ${process.platform} (${process.arch})`);
   
   try {
-    // Ensure temp dir is clean
     try {
       await fs.rm(TEMP_DIR, { recursive: true, force: true });
     } catch (e) {}
@@ -327,16 +283,15 @@ async function main() {
         await setupLinux();
         break;
       default:
-        throw new Error(`Unsupported platform: ${process.platform}`);
+        throw new Error(`Platform tidak didukung: ${process.platform}`);
     }
     
-    console.log('\n✨ FFmpeg setup complete!');
+    console.log('\n✨ FFmpeg setup selesai!');
     process.exit(0);
     
   } catch (error) {
-    console.error('\n❌ Setup failed:', error.message);
+    console.error('\n❌ Setup gagal:', error.message);
     
-    // Cleanup on error
     try {
       await fs.rm(TEMP_DIR, { recursive: true, force: true });
     } catch (e) {}
