@@ -134,7 +134,7 @@ async function processVideo(inputVideo, options = {}) {
 
   // Build video dari frame-frame yang sudah dibersihkan
   const outputVideoPath = options.outputPath || inputVideo.replace(/(\.\w+)$/, '_no-watermark$1');
-  await buildVideo(finalDir, outputVideoPath);
+  await buildVideo(finalDir, outputVideoPath, 1, inputVideo);
 
   console.log("✅ SELESAI: " + outputVideoPath);
   
