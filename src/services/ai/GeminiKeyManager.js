@@ -20,30 +20,26 @@ class GeminiKeyManager {
   }
 
   getCurrentKey() {
-    const availableKeys = this.apiKeys.filter((key, index) => {
-      if (this.failedKeys.has(index)) return false;
+    // Mulai pencarian dari currentIndex, bukan dari 0
+    const totalKeys = this.apiKeys.length;
+    for (let i = 0; i < totalKeys; i++) {
+      const index = (this.currentIndex + i) % totalKeys;
+      
+      if (this.failedKeys.has(index)) continue;
       if (this.rateLimitReset.has(index)) {
         const resetTime = this.rateLimitReset.get(index);
-        if (Date.now() < resetTime) return false;
+        if (Date.now() < resetTime) continue;
         this.rateLimitReset.delete(index);
       }
-      return true;
-    });
-
-    if (availableKeys.length === 0) {
-      // FIX: Reset semua key jika semuanya terkena limit, beri kesempatan ulang
-      console.warn('Semua key terkena limit/gagal. Mereset status...');
-      this.resetAll();
-      return { key: this.apiKeys[0], index: 0 };
+      
+      this.currentIndex = index;
+      return { key: this.apiKeys[index], index };
     }
 
-    const availableIndex = this.apiKeys.indexOf(availableKeys[0]);
-    this.currentIndex = availableIndex;
-    
-    return {
-      key: this.apiKeys[this.currentIndex],
-      index: this.currentIndex
-    };
+    // Semua key terkena limit
+    console.warn('Semua key terkena limit/gagal. Mereset status...');
+    this.resetAll();
+    return { key: this.apiKeys[0], index: 0 };
   }
 
   rotateKey() {
