@@ -69,6 +69,11 @@ class GeminiKeyManager {
     };
   }
 
+  resetRateLimits() {
+  this.rateLimitReset.clear();
+  console.log('Rate limits reset');
+}
+
   resetAll() {
     this.failedKeys.clear();
     this.rateLimitReset.clear();
