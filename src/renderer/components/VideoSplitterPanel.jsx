@@ -5,16 +5,14 @@ import ClipCard from './ClipCard';
 function VideoSplitterPanel() {
   const [video, setVideo] = useState(null);
   const [processing, setProcessing] = useState(false);
-  
-  // FIX: State untuk menyimpan 2 metrik progress secara terpisah
   const [progressData, setProgressData] = useState({ 
     overallPercent: 0, 
     taskPercent: 0, 
     message: '', 
     taskName: '' 
   });
-  
   const [results, setResults] = useState(null);
+  const [error, setError] = useState(null);
 
   const [options, setOptions] = useState({
     minDuration: 15,
@@ -51,6 +49,7 @@ function VideoSplitterPanel() {
     }
     setVideo(file);
     setResults(null);
+    setError(null);
   };
 
   const { getRootProps, getInputProps } = useDropzone({
@@ -68,6 +67,7 @@ function VideoSplitterPanel() {
     if (!video) return;
 
     setProcessing(true);
+    setError(null);
     setProgressData({ overallPercent: 0, taskPercent: 0, message: 'Menyiapkan mesin AI...', taskName: 'Inisialisasi' });
 
     try {
@@ -80,13 +80,13 @@ function VideoSplitterPanel() {
         setProgressData({ overallPercent: 100, taskPercent: 100, message: 'Selesai merender klip!', taskName: 'Selesai' });
         setResults(result.data);
       } else {
-        alert('Error: ' + result.error);
-        setProgressData({ overallPercent: 0, taskPercent: 0, message: 'Gagal diproses.', taskName: 'Error' });
+        setError(result.error || 'Proses gagal');
+        setProgressData({ overallPercent: 0, taskPercent: 0, message: '', taskName: '' });
       }
     } catch (err) {
       console.error(err);
-      alert('Terjadi error saat processing');
-      setProgressData({ overallPercent: 0, taskPercent: 0, message: 'Error system.', taskName: 'Error' });
+      setError(err.message || 'Terjadi error saat processing');
+      setProgressData({ overallPercent: 0, taskPercent: 0, message: '', taskName: '' });
     }
 
     setProcessing(false);
@@ -99,10 +99,10 @@ function VideoSplitterPanel() {
         {video ? (
           <div>
             <p>📹 {video.name}</p>
-            <p>Click to change video</p>
+            <p style={{ opacity: 0.6, fontSize: '0.85rem' }}>Klik untuk ganti video</p>
           </div>
         ) : (
-          <p>Drop long video (1-2 hours) here</p>
+          <p>Drop video panjang (1-2 jam) di sini</p>
         )}
       </div>
 
@@ -110,7 +110,7 @@ function VideoSplitterPanel() {
         <div className="options" style={{ marginTop: '1rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div>
-              <label>Target Clips: {options.targetClips}</label>
+              <label>Target Klip: {options.targetClips}</label>
               <input
                 type="range" min="3" max="30" value={options.targetClips}
                 onChange={(e) => setOptions({ ...options, targetClips: parseInt(e.target.value) })}
@@ -128,14 +128,14 @@ function VideoSplitterPanel() {
               </select>
             </div>
             <div>
-              <label>Min Duration: {options.minDuration}s</label>
+              <label>Min Durasi: {options.minDuration}s</label>
               <input
                 type="range" min="15" max="30" value={options.minDuration}
                 onChange={(e) => setOptions({ ...options, minDuration: parseInt(e.target.value) })}
               />
             </div>
             <div>
-              <label>Max Duration: {options.maxDuration}s</label>
+              <label>Max Durasi: {options.maxDuration}s</label>
               <input
                 type="range" min="30" max="90" value={options.maxDuration}
                 onChange={(e) => setOptions({ ...options, maxDuration: parseInt(e.target.value) })}
@@ -143,7 +143,7 @@ function VideoSplitterPanel() {
             </div>
           </div>
           <div style={{ marginTop: '1rem' }}>
-            <label>Series Name (optional):</label>
+            <label>Nama Series (opsional):</label>
             <input
               type="text" placeholder="My Video Series" value={options.seriesName}
               onChange={(e) => setOptions({ ...options, seriesName: e.target.value })}
@@ -152,17 +152,23 @@ function VideoSplitterPanel() {
         </div>
       )}
 
-      {/* FIX: TAMPILAN 2 LAPIS PROGRESS BAR */}
+      {/* ERROR MESSAGE */}
+      {error && (
+        <div className="card" style={{ borderLeft: '4px solid #ef4444', marginTop: '1rem' }}>
+          <p style={{ color: '#ef4444' }}>❌ {error}</p>
+        </div>
+      )}
+
+      {/* PROGRESS BAR 2 LAPIS */}
       {processing && (
-        <div className="progress-container" style={{ marginTop: '2rem', padding: '1.5rem', background: 'rgba(0,0,0,0.03)', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.08)' }}>
+        <div className="progress-container" style={{ marginTop: '2rem', padding: '1.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
           
-          {/* Progress 1: Keseluruhan (Warna Biru) */}
           <div style={{ marginBottom: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-              <span>Total Progress Keseluruhan</span>
-              <span style={{ color: '#4f46e5' }}>{progressData.overallPercent}%</span>
+              <span>Total Progress</span>
+              <span style={{ color: '#667eea' }}>{progressData.overallPercent}%</span>
             </div>
-            <div style={{ width: '100%', backgroundColor: '#e2e8f0', borderRadius: '8px', height: '14px', overflow: 'hidden' }}>
+            <div style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', height: '14px', overflow: 'hidden' }}>
               <div
                 style={{
                   width: `${progressData.overallPercent}%`,
@@ -174,16 +180,15 @@ function VideoSplitterPanel() {
             </div>
           </div>
 
-          {/* Progress 2: Per Bagian / Sub-Task (Warna Hijau) */}
-          <div style={{ padding: '1rem', background: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem', color: '#475569', fontWeight: '500' }}>
+          <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem', color: 'rgba(255,255,255,0.7)', fontWeight: '500' }}>
               <span>
-                {progressData.taskName && <strong style={{color: '#1e293b', marginRight: '6px'}}>[{progressData.taskName}]</strong>} 
+                {progressData.taskName && <strong style={{color: '#fff', marginRight: '6px'}}>[{progressData.taskName}]</strong>} 
                 ⏳ {progressData.message}
               </span>
               <span style={{ color: '#10b981', fontWeight: 'bold' }}>{progressData.taskPercent}%</span>
             </div>
-            <div style={{ width: '100%', backgroundColor: '#f1f5f9', borderRadius: '6px', height: '8px', overflow: 'hidden' }}>
+            <div style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '6px', height: '8px', overflow: 'hidden' }}>
               <div
                 style={{
                   width: `${progressData.taskPercent}%`,
@@ -204,26 +209,27 @@ function VideoSplitterPanel() {
           className="btn-primary"
           style={{ marginTop: '1.5rem', width: '100%' }}
         >
-          ✨ Split into Viral Clips
+          ✨ Split Menjadi Klip Viral
         </button>
       )}
 
       {results && (
         <div className="results" style={{ marginTop: '2rem' }}>
-          <h3>🎉 {results.summary.totalClips} Clips Generated!</h3>
+          <h3>🎉 {results.summary?.totalClips || 0} Klip Berhasil Dibuat!</h3>
           <p>
-            Avg FYP Score: {results.summary.averageFYPScore}/100 | Total Duration:{' '}
-            {results.summary.totalDuration}s | Time: {results.summary.processingTime}
+            Rata-rata FYP Score: {results.summary?.averageFYPScore || 0}/100 | 
+            Total Durasi: {Math.round(results.summary?.totalDuration || 0)}s | 
+            Waktu Proses: {results.summary?.processingTime || '0s'}
           </p>
 
           <div className="clips-grid">
-            {results.clips.map((clip, idx) => (
+            {results.clips?.map((clip, idx) => (
               <ClipCard key={idx} clip={clip} />
             ))}
           </div>
           
-          <button onClick={() => { setResults(null); setVideo(null); }} className="btn-secondary" style={{ marginTop: '2rem' }}>
-            Potong Video Lainnya
+          <button onClick={() => { setResults(null); setVideo(null); setError(null); }} className="btn-secondary" style={{ marginTop: '2rem' }}>
+            🔄 Potong Video Lainnya
           </button>
         </div>
       )}
