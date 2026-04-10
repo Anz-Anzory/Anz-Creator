@@ -20,11 +20,11 @@ class GeminiService {
     this._dailyQuotaExhausted = new Set();
   }
 
-  fallbackModels = [
-    'gemini-3.1-flash-lite-preview',
-    'gemini-3-flash-preview',
-    'gemini-2.5-flash'
-  ];
+  this.fallbackModels = [
+      'gemini-3.1-flash-lite-preview',
+      'gemini-3-flash-preview',
+      'gemini-2.5-flash'
+    ];
 
   getStats() {
     return {
