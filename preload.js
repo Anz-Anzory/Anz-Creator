@@ -1,6 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Daftar whitelist saluran IPC yang diizinkan untuk keamanan
 const validChannels = [
   'save-api-keys',
   'get-key-status',
@@ -12,7 +11,7 @@ const validChannels = [
   'get-video-info',
   'select-output-dir',
   'split-progress',
-  'save-file' // <--- INI KUNCI AGAR TOMBOL DOWNLOAD BERFUNGSI
+  'save-file'
 ];
 
 contextBridge.exposeInMainWorld('electron', {
