@@ -77,7 +77,9 @@ class SplitPlanner {
   }
 
   calculateSeriesEngagement(clips) {
-    const avgScore = clips.reduce((sum, c) => sum + c.fypScore, 0) / clips.length;
+    const avgScore = clips.length > 0 
+      ? clips.reduce((sum, c) => sum + c.fypScore, 0) / clips.length 
+      : 0;
     const viralClips = clips.filter(c => c.fypScore > 85).length;
     
     return {
@@ -91,8 +93,8 @@ class SplitPlanner {
     return clips.map((clip, index) => ({
       clipId: clip.id,
       sequence: clip.sequence,
-      scheduledTime: clip.timing.uploadTime,
-      recommendedCaption: clip.suggestedCaption,
+      scheduledTime: clip.timing?.uploadTime,
+      recommendedCaption: clip.suggestedCaption || '',
       postImmediately: index === 0
     }));
   }
