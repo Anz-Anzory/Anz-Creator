@@ -14,24 +14,38 @@ class ViralMomentDetector {
   // ==========================================
   
   async detectViralMoments(videoPath, options = {}) {
-    console.log('🔍 Analyzing video for viral moments...');
+    console.log('🔍 Menganalisa video untuk momen viral...');
     
-    const strategy = options.strategy || 'comprehensive'; // 'fast' | 'comprehensive' | 'deep'
-    const minClipDuration = options.minDuration || 15;   // Minimum 15s
-    const maxClipDuration = options.maxDuration || 60;   // Maximum 60s
-    const targetClipCount = options.targetClips || 10;   // Target jumlah clips
+    const strategy = options.strategy || 'comprehensive';
+    const minClipDuration = options.minDuration || 15;
+    const maxClipDuration = options.maxDuration || 60;
+    const targetClipCount = options.targetClips || 10;
     
     try {
-      // Step 1: Extract scenes & audio analysis
-      const scenes = await this.extractScenes(videoPath);
-      const audioAnalysis = await this.analyzeAudioPeaks(videoPath);
+      // Step 1: Deteksi scene & analisa audio
+      let scenes = await this.extractScenes(videoPath);
+      
+      // FIX: Handle video tanpa scene change — buat segmentasi manual
+      if (scenes.length === 0) {
+        console.warn('⚠️ Tidak ada scene change terdeteksi, membuat segmentasi manual...');
+        scenes = await this.createManualSegments(videoPath, maxClipDuration);
+      }
+      
+      if (scenes.length === 0) {
+        throw new Error('Gagal mengekstrak scene dari video. Pastikan video tidak corrupt.');
+      }
+      
+      const audioAnalysis = await this.analyzeAudioPeaks(videoPath).catch(err => {
+        console.warn('⚠️ Analisa audio gagal, lanjut tanpa data audio:', err.message);
+        return [];
+      });
       
       // Step 2: Sample frames untuk AI analysis
       console.log(`📸 Sampling ${scenes.length} scenes...`);
       const sceneSamples = await this.sampleScenes(videoPath, scenes, strategy);
       
       // Step 3: AI Viral Score Analysis
-      console.log('🤖 Analyzing viral potential...');
+      console.log('🤖 Menganalisa potensi viral...');
       const viralScores = await this.analyzeViralPotential(sceneSamples);
       
       // Step 4: Merge & rank moments
@@ -50,7 +64,7 @@ class ViralMomentDetector {
       });
 
       return {
-        totalDuration: scenes[scenes.length - 1].end,
+        totalDuration: scenes[scenes.length - 1]?.end || 0,
         detectedScenes: scenes.length,
         viralMoments: moments.length,
         optimizedClips: optimizedClips.length,
@@ -58,9 +72,44 @@ class ViralMomentDetector {
       };
 
     } catch (error) {
-      console.error('❌ Viral detection failed:', error);
+      console.error('❌ Deteksi viral gagal:', error);
       throw error;
     }
+  }
+
+  // ==========================================
+  // FIX: Segmentasi manual jika tidak ada scene change
+  // ==========================================
+  
+  async createManualSegments(videoPath, segmentDuration = 60) {
+    const totalDuration = await new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(videoPath, (err, metadata) => {
+        if (err) reject(err);
+        else resolve(parseFloat(metadata.format.duration) || 0);
+      });
+    });
+    
+    if (totalDuration === 0) return [];
+    
+    const segments = [];
+    let start = 0;
+    let id = 0;
+    
+    while (start < totalDuration) {
+      const end = Math.min(start + segmentDuration, totalDuration);
+      if (end - start >= 5) { // Minimal 5 detik
+        segments.push({
+          id: id++,
+          start,
+          end,
+          duration: end - start
+        });
+      }
+      start = end;
+    }
+    
+    console.log(`📎 Dibuat ${segments.length} segmen manual (masing-masing ~${segmentDuration}s)`);
+    return segments;
   }
 
   // ==========================================
@@ -77,7 +126,6 @@ class ViralMomentDetector {
         .videoFilters(`select='gt(scene,${threshold})',showinfo`)
         .outputOptions('-f', 'null')
         .on('stderr', (stderrLine) => {
-          // Parse scene change timestamps dari ffmpeg output
           const ptsMatch = stderrLine.match(/pts_time:([\d.]+)/);
           const tMatch = stderrLine.match(/t:([\d.]+)\s/);
           
@@ -100,33 +148,36 @@ class ViralMomentDetector {
           }
         })
         .on('end', () => {
-          // Get final duration dan complete last scene
           ffmpeg.ffprobe(videoPath, (err, metadata) => {
             if (err) {
-              reject(err);
+              // FIX: Jangan reject, return scenes yang sudah ada
+              console.warn('ffprobe gagal saat finalisasi scene:', err.message);
+              resolve(scenes.map((s, i) => ({ id: i, ...s, duration: s.end - s.start })).filter(s => s.duration > 1));
               return;
             }
             
             const totalDuration = metadata.format.duration;
             
-            // Complete last scene jika belum selesai
             if (currentScene.start < totalDuration) {
               currentScene.end = totalDuration;
               scenes.push(currentScene);
             }
             
-            // Format scenes dengan ID dan duration
             const formattedScenes = scenes.map((s, i) => ({
               id: i,
               start: s.start,
               end: s.end,
               duration: s.end - s.start
-            })).filter(s => s.duration > 1); // Filter scenes < 1s
+            })).filter(s => s.duration > 1);
             
             resolve(formattedScenes);
           });
         })
-        .on('error', reject)
+        .on('error', (err) => {
+          // FIX: Jangan crash, return empty array agar fallback ke segmentasi manual
+          console.warn('Scene detection error (akan fallback ke manual):', err.message);
+          resolve([]);
+        })
         .output('-')
         .run();
     });
@@ -144,7 +195,6 @@ class ViralMomentDetector {
         .audioFilters('ebur128=peak=true')
         .outputOptions('-f', 'null')
         .on('stderr', (line) => {
-          // Parse EBU R128 loudness data
           const tMatch = line.match(/t:\s*([\d.]+)/);
           const peakMatch = line.match(/Peak:\s*([-\d.]+)/);
           
@@ -156,11 +206,13 @@ class ViralMomentDetector {
           }
         })
         .on('end', () => {
-          // Detect audio peaks (exciting moments)
           const peaks = this.detectAudioPeaks(audioData);
           resolve(peaks);
         })
-        .on('error', reject)
+        .on('error', (err) => {
+          console.warn('Audio analysis error:', err.message);
+          resolve([]); // FIX: Jangan reject, return empty agar pipeline tetap jalan
+        })
         .output('-')
         .run();
     });
@@ -174,16 +226,13 @@ class ViralMomentDetector {
     
     for (const data of audioData) {
       if (data.peak > threshold && !inPeak) {
-        // Start of peak
         inPeak = true;
         peakStart = data.time;
         peakMax = data.peak;
       } else if (inPeak) {
-        // Inside peak
         if (data.peak > peakMax) peakMax = data.peak;
         
         if (data.peak <= threshold) {
-          // End of peak
           inPeak = false;
           peaks.push({
             start: peakStart,
@@ -196,7 +245,6 @@ class ViralMomentDetector {
       }
     }
     
-    // Close peak if still open at end
     if (inPeak && audioData.length > 0) {
       peaks.push({
         start: peakStart,
@@ -206,7 +254,6 @@ class ViralMomentDetector {
       });
     }
     
-    // Filter peaks < 2s (too short) dan sort by intensity
     return peaks
       .filter(p => p.duration >= 2)
       .sort((a, b) => b.intensity - a.intensity);
@@ -223,12 +270,9 @@ class ViralMomentDetector {
     const sampleCount = strategy === 'fast' ? 1 : strategy === 'deep' ? 5 : 3;
     
     for (const scene of scenes) {
-      // Skip jika scene terlalu pendek
       if (scene.duration < 3) continue;
       
       const sceneSamples = [];
-      
-      // Calculate sample timestamps (evenly distributed)
       const interval = scene.duration / (sampleCount + 1);
       
       for (let i = 1; i <= sampleCount; i++) {
@@ -246,7 +290,7 @@ class ViralMomentDetector {
             relativeTime: timestamp - scene.start
           });
         } catch (err) {
-          console.warn(`Failed to extract frame at ${timestamp}s:`, err.message);
+          console.warn(`Gagal ekstrak frame di ${timestamp}s:`, err.message);
         }
       }
       
@@ -269,7 +313,7 @@ class ViralMomentDetector {
           timestamps: [timestamp],
           filename: path.basename(outputPath),
           folder: path.dirname(outputPath),
-          size: '720x1280' // Portrait untuk shorts/reels
+          size: '720x1280'
         })
         .on('end', resolve)
         .on('error', reject);
@@ -303,12 +347,12 @@ Content Classification:
 - Identify content type (educational, entertainment, comedy, emotional, inspirational, tutorial)
 
 Key Moments:
-- Identify timestamps of key moments/hooks dalam scene ini
+- Identify timestamps of key moments/hooks
 
 Suggested Captions:
-- Suggest 2-3 short hook captions for this content
+- Suggest 2-3 short hook captions
 
-Return ONLY JSON:
+Return ONLY valid JSON (no markdown code blocks):
 {
   "hookStrength": 85,
   "visualAppeal": 70,
@@ -316,38 +360,34 @@ Return ONLY JSON:
   "shareability": 75,
   "trendPotential": 80,
   "fypScore": 80,
-  "contentType": "educational|entertainment|emotional|inspirational|comedy|tutorial",
+  "contentType": "educational",
   "keyMoments": ["0-3s: Strong hook", "5-8s: Plot twist"],
   "suggestedCaptions": ["Short hook caption", "Alternative"],
   "bestThumbnailFrame": 1
 }`;
 
           const imageParts = frameBase64s.map(b64 => ({
-            inlineData: {
-              data: b64,
-              mimeType: 'image/jpeg'
-            }
+            inlineData: { data: b64, mimeType: 'image/jpeg' }
           }));
 
           const result = await model.generateContent([prompt, ...imageParts]);
           return result.response.text();
         }, `Viral Analysis Scene ${sample.sceneId}`);
 
-        // Parse JSON response
         let parsed;
         try {
-          const jsonMatch = analysis.match(/\{[\s\S]*\}/);
+          let cleanText = analysis.trim().replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
+          const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
           parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
         } catch (parseError) {
-          console.warn('Failed to parse AI response, using defaults');
+          console.warn('Gagal parse response AI, gunakan default');
           parsed = {};
         }
         
-        // Calculate overall score
         const overallScore = parsed.fypScore || 
-          Math.round((parsed.hookStrength + parsed.visualAppeal + 
-                     parsed.contentValue + parsed.shareability + 
-                     parsed.trendPotential) / 5) || 50;
+          Math.round(((parsed.hookStrength || 50) + (parsed.visualAppeal || 50) + 
+                     (parsed.contentValue || 50) + (parsed.shareability || 50) + 
+                     (parsed.trendPotential || 50)) / 5);
         
         scores.push({
           sceneId: sample.scene.id,
@@ -359,7 +399,7 @@ Return ONLY JSON:
         });
         
       } catch (error) {
-        console.warn(`Analysis failed for scene ${sample.sceneId}:`, error.message);
+        console.warn(`Analisa gagal untuk scene ${sample.sceneId}:`, error.message);
         scores.push({
           sceneId: sample.scene.id,
           scene: sample.scene,
@@ -384,15 +424,13 @@ Return ONLY JSON:
     for (const score of viralScores) {
       const scene = score.scene;
       
-      // Check audio peaks dalam scene ini
       const sceneAudioPeaks = audioPeaks.filter(p => 
         p.start >= scene.start && p.end <= scene.end
       );
       
-      // Boost score jika ada audio peaks (exciting audio)
       const audioBoost = sceneAudioPeaks.length > 0 ? 10 : 0;
       const intensityBoost = sceneAudioPeaks.length > 0 ? 
-        Math.min(5, sceneAudioPeaks[0].intensity / 10) : 0;
+        Math.min(5, Math.abs(sceneAudioPeaks[0].intensity) / 10) : 0;
       
       const finalScore = Math.min(100, score.overallScore + audioBoost + intensityBoost);
       
@@ -414,7 +452,6 @@ Return ONLY JSON:
       });
     }
     
-    // Sort by FYP score descending
     return moments.sort((a, b) => b.fypScore - a.fypScore);
   }
 
@@ -427,40 +464,30 @@ Return ONLY JSON:
     const usedTimeRanges = [];
     
     for (const moment of moments) {
-      // Skip jika overlap dengan clip yang sudah ada
-      if (this.hasOverlap(moment.start, moment.end, usedTimeRanges, 2)) { // 2s buffer
+      if (this.hasOverlap(moment.start, moment.end, usedTimeRanges, 2)) {
         continue;
       }
       
-      // Adjust boundaries untuk optimal duration
       let clipStart = moment.start;
       let clipEnd = moment.end;
       
-      // Target duration berdasarkan content type
       const targetDuration = this.calculateOptimalDuration(moment);
       const currentDuration = moment.duration;
       
       if (currentDuration < options.minDuration) {
-        // Scene terlalu pendek, extend ke depan jika bisa
         const extendNeeded = options.minDuration - currentDuration;
         clipEnd = Math.min(moment.end + extendNeeded, moment.end + 5);
       } else if (currentDuration > options.maxDuration) {
-        // Scene terlalu panjang, trim ke durasi optimal
-        // Prioritaskan hook di awal
         clipEnd = moment.start + Math.min(options.maxDuration, targetDuration);
       } else if (Math.abs(currentDuration - targetDuration) > 5) {
-        // Adjus untuk更接近 target
         if (currentDuration < targetDuration) {
-          // Extend sedikit
           const extendBy = Math.min(targetDuration - currentDuration, 5);
           clipEnd = moment.end + extendBy;
         } else {
-          // Trim sedikit
           clipEnd = moment.start + targetDuration;
         }
       }
       
-      // Ensure tidak melebihi batas
       clipEnd = Math.max(clipEnd, clipStart + options.minDuration);
       clipEnd = Math.min(clipEnd, clipStart + options.maxDuration);
       
@@ -480,7 +507,6 @@ Return ONLY JSON:
       clips.push(clip);
       usedTimeRanges.push({ start: clipStart, end: clipEnd });
       
-      // Stop jika sudah mencapai target count
       if (clips.length >= options.targetCount) break;
     }
     
@@ -488,10 +514,7 @@ Return ONLY JSON:
   }
 
   calculateOptimalDuration(moment) {
-    // Strategy: Hook kuat = bisa pendek, Content educational = perlu lebih panjang
-    const baseDuration = 30; // 30 seconds default
-    
-    const contentType = moment.details.contentType || 'general';
+    const contentType = moment.details?.contentType || moment.metadata?.contentType || 'general';
     
     switch (contentType) {
       case 'educational':
@@ -504,13 +527,12 @@ Return ONLY JSON:
       case 'entertainment':
         return moment.fypScore > 90 ? 21 : 30;
       default:
-        return moment.fypScore > 85 ? 21 : baseDuration;
+        return moment.fypScore > 85 ? 21 : 30;
     }
   }
 
   hasOverlap(start, end, ranges, bufferSeconds = 0) {
     return ranges.some(r => {
-      // Check dengan buffer untuk menghindari clips yang terlalu dekat
       const rStart = r.start - bufferSeconds;
       const rEnd = r.end + bufferSeconds;
       return !(end <= rStart || start >= rEnd);
@@ -518,52 +540,16 @@ Return ONLY JSON:
   }
 
   // ==========================================
-  // UTILITIES
+  // CLEANUP
   // ==========================================
   
   async cleanup() {
     try {
       await fs.rm(this.tempDir, { recursive: true, force: true });
-      console.log('🧹 Cleaned up temp directory');
+      console.log('🧹 Temp directory dibersihkan');
     } catch (err) {
-      console.warn('Failed to cleanup:', err.message);
+      console.warn('Gagal membersihkan temp:', err.message);
     }
-  }
-
-  // Get detailed analysis report
-  getAnalysisReport(results) {
-    return {
-      summary: {
-        totalDuration: results.totalDuration,
-        totalScenes: results.detectedScenes,
-        viralMomentsFound: results.viralMoments,
-        clipsGenerated: results.optimizedClips,
-        averageFYPScore: results.clips.reduce((sum, c) => sum + c.fypScore, 0) / results.clips.length
-      },
-      topClips: results.clips.slice(0, 5),
-      contentTypes: this.analyzeContentTypes(results.clips),
-      bestPostingTimes: this.calculateOptimalPostingTimes(results.clips.length)
-    };
-  }
-
-  analyzeContentTypes(clips) {
-    const types = {};
-    clips.forEach(c => {
-      types[c.contentType] = (types[c.contentType] || 0) + 1;
-    });
-    return types;
-  }
-
-  calculateOptimalPostingTimes(clipCount) {
-    const times = [];
-    const optimalHours = [11, 15, 19, 21]; // 11am, 3pm, 7pm, 9pm
-    
-    for (let i = 0; i < clipCount; i++) {
-      const hour = optimalHours[i % optimalHours.length];
-      times.push(`${hour}:00`);
-    }
-    
-    return times;
   }
 }
 
