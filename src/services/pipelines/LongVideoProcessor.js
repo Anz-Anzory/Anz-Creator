@@ -96,13 +96,19 @@ class LongVideoProcessor {
       reportProgress(0, 0, `ERROR: ${error.message}`, 'Proses Gagal');
       throw error;
     } finally {
-      try { 
-        await this.detector.cleanup(); 
-      } catch (e) {
-        // Abaikan error saat membersihkan cache
-      }
+      try { await this.detector.cleanup(); } catch (e) {}
+      // Cleanup temp frame samples dari generator (bukan klip hasil — user masih butuh)
+      // ClipGenerator menyimpan frame-sample-* di outputDir yang bisa dibersihkan
+      try {
+        const genDir = this.generator.outputDir;
+        const fsSync = require('fs');
+        if (fsSync.existsSync(genDir)) {
+          const tempFiles = fsSync.readdirSync(genDir).filter(f => f.startsWith('frame-sample-'));
+          for (const f of tempFiles) {
+            fsSync.unlinkSync(path.join(genDir, f));
+          }
+        }
+      } catch (e) {}
     }
-  }
-}
 
 module.exports = LongVideoProcessor;
