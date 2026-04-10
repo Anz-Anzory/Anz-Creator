@@ -282,6 +282,13 @@ ipcMain.handle('remove-watermark', async (event, { videoPath, options }) => {
       }
     }
     const result = await videoProcessor.processVideo(videoPath, {
+      removeWatermark: true,
+      inpaintMethod: options.method || 'hybrid',
+      outputPath: options.outputPath
+    })
+    return { success: true, result }
+  } catch (error) {
+    return { success: false, error: error.message }
   }
 })
 
