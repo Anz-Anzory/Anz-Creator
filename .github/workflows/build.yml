@@ -23,7 +23,6 @@ jobs:
 
     env:
       CI: true
-      # PERBAIKAN 1: Gunakan GITHUB_TOKEN bawaan agar tidak perlu repot setting secret manual
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
@@ -45,7 +44,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-npm-
 
-      # 🔥 INSTALL (AUTO FALLBACK)
       - name: 📦 Install Dependencies
         run: |
           if exist package-lock.json (
@@ -55,25 +53,20 @@ jobs:
           )
         shell: cmd
 
-      # 🔥 SETUP FFMPEG
       - name: 🎬 Setup FFmpeg
         run: node scripts/setup-ffmpeg.js || exit /b 1
         shell: cmd
 
-      # 🔥 BUILD + AUTO UPLOAD KE GITHUB RELEASE
       - name: 🚀 Build & Publish
-        # PERBAIKAN 2: Tambahkan --publish always agar pasti terupload ke halaman Release
         run: npm run build:win -- --publish always
         shell: cmd
 
-      # 🔍 DEBUG (optional tapi berguna)
       - name: 🔍 Check Output
         run: |
           echo === RELEASE ===
           dir release\ /s /b 2>nul || echo "No release folder"
         shell: cmd
 
-      # PERBAIKAN 3: Backup output build. Jika Release gagal, file exe tetap bisa diunduh dari log GitHub Actions
       - name: 💾 Upload Artifact Backup
         uses: actions/upload-artifact@v4
         with:
