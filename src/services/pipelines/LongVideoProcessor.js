@@ -10,7 +10,6 @@ class LongVideoProcessor {
   }
 
   async process(videoPath, options = {}) {
-    // Fungsi bantuan untuk mengirim 2 lapis persentase ke UI
     const reportProgress = (overallPercent, taskPercent, message, taskName) => {
       if (options.onProgress) {
         options.onProgress({ overallPercent, taskPercent, message, taskName });
@@ -32,7 +31,18 @@ class LongVideoProcessor {
       });
       
       results.stages.push({ name: 'viral-detection', status: 'complete' });
-      reportProgress(40, 100, `Menemukan ${viralMoments.optimizedClips} momen potensial. Merencanakan pemotongan...`, 'Tahap 1: Selesai');
+      
+      // FIX: Pesan yang lebih akurat — "optimizedClips" adalah jumlah klip yang akan dibuat
+      reportProgress(
+        40, 100, 
+        `Ditemukan ${viralMoments.viralMoments} momen viral, dioptimasi menjadi ${viralMoments.optimizedClips} klip.`, 
+        'Tahap 1: Selesai'
+      );
+      
+      // FIX: Handle jika tidak ada klip yang ditemukan
+      if (viralMoments.optimizedClips === 0) {
+        throw new Error('Tidak ada momen viral yang terdeteksi dalam video. Coba ubah pengaturan durasi atau gunakan video yang lebih variatif.');
+      }
       
       const plan = this.planner.createPlan(viralMoments.clips, {
         platform: options.platform || 'tiktok'
@@ -43,25 +53,23 @@ class LongVideoProcessor {
       });
       
       results.stages.push({ name: 'planning', status: 'complete', data: seriesPlan });
-      reportProgress(50, 100, `Memulai AI Rendering untuk ${seriesPlan.totalClips} Klip Video...`, 'Tahap 2: Perencanaan Konten');
+      reportProgress(50, 100, `Memulai rendering ${seriesPlan.totalClips} klip video...`, 'Tahap 2: Perencanaan Konten');
       
       const clips = await this.generator.generateClips(videoPath, plan, {
         onProgress: (progress) => {
           const currentPercent = 50 + Math.round((progress.current / progress.total) * 45);
-          // Gunakan subPercent realtime dari FFmpeg jika ada
           const taskPercent = progress.subPercent ? Math.round(progress.subPercent) : Math.round((progress.current / progress.total) * 100);
           
           reportProgress(
             currentPercent, 
             taskPercent, 
-            progress.taskName || `Menganalisa AI Klip ${progress.current} dari ${progress.total}...`, 
+            progress.taskName || `Memproses klip ${progress.current} dari ${progress.total}...`, 
             'Tahap 3: Pembuatan Klip'
           );
         }
       });
       
       results.stages.push({ name: 'generation', status: 'complete', clipsGenerated: clips.length });
-      
       reportProgress(100, 100, 'Semua proses selesai! Video siap diunduh.', 'Selesai');
       
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -73,6 +81,8 @@ class LongVideoProcessor {
 
       results.summary = {
         totalClips: clips.length,
+        successClips: validClips.length,
+        failedClips: clips.length - validClips.length,
         totalDuration: clips.reduce((sum, c) => sum + (c.duration || 0), 0),
         averageFYPScore: avgScore,
         processingTime: `${duration}s`,
@@ -86,14 +96,13 @@ class LongVideoProcessor {
       reportProgress(0, 0, `ERROR: ${error.message}`, 'Proses Gagal');
       throw error;
     } finally {
-      // FIX: Hapus this.generator.cleanup() agar video yang sudah dirender TIDAK hilang/dihapus
       try { 
         await this.detector.cleanup(); 
       } catch (e) {
-        // Abaikan error saat membersihkan cache kecil
+        // Abaikan error saat membersihkan cache
       }
     }
   }
-} // <-- Penutup class
+}
 
-module.exports = LongVideoProcessor; // <-- WAJIB ADA AGAR TIDAK ERROR
+module.exports = LongVideoProcessor;
