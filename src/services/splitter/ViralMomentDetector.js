@@ -141,13 +141,11 @@ class ViralMomentDetector {
           const tMatch = line.match(/t:([\d.]+)\s/);
           const timestamp = ptsMatch ? parseFloat(ptsMatch[1]) : tMatch ? parseFloat(tMatch[1]) : null;
           
-          if (timestamp && timestamp > lastTimestamp) {
+          if (timestamp && timestamp > lastTimestamp + 0.5) {
+            // Minimum 0.5s gap antara scene changes
             lastTimestamp = timestamp;
-            if (currentScene.start === 0 && timestamp > 0) {
-              currentScene.end = timestamp;
-              scenes.push({ ...currentScene });
-              currentScene = { start: timestamp, end: timestamp };
-            } else if (timestamp > currentScene.start) {
+            if (timestamp > currentScene.start + 1) {
+              // Scene minimal 1 detik
               currentScene.end = timestamp;
               scenes.push({ ...currentScene });
               currentScene = { start: timestamp, end: timestamp };
