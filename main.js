@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron') // Pastikan ada protocol dan net
+const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron')
 const path = require('path')
 const fs = require('fs').promises
 const isDev = !app.isPackaged
@@ -8,11 +8,23 @@ const KeyStorage = require('./src/services/config/KeyStorage')
 const GeminiService = require('./src/services/ai/GeminiService')
 const VideoProcessor = require('./src/services/watermarkRemover')
 const LongVideoProcessor = require('./src/services/pipelines/LongVideoProcessor')
+
+// ============================================
+// FIX: Set path untuk KEDUA binary (ffmpeg + ffprobe)
+// ============================================
+const ffmpegBinaryName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+const ffprobeBinaryName = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+
 const ffmpegPath = isDev 
-  ? path.join(__dirname, 'resources', 'ffmpeg', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
-  : path.join(process.resourcesPath, 'ffmpeg', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+  ? path.join(__dirname, 'resources', 'ffmpeg', ffmpegBinaryName)
+  : path.join(process.resourcesPath, 'ffmpeg', ffmpegBinaryName);
+
+const ffprobePath = isDev 
+  ? path.join(__dirname, 'resources', 'ffmpeg', ffprobeBinaryName)
+  : path.join(process.resourcesPath, 'ffmpeg', ffprobeBinaryName);
 
 ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfprobePath(ffprobePath); // FIX: Sebelumnya tidak ada, menyebabkan ffprobe gagal di production
 
 let mainWindow
 let geminiService
@@ -55,7 +67,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  // FIX 1: Protocol 'media://' yang 100% Anti-Error di Windows
+  // Protocol 'media://' untuk akses file lokal dari renderer
   protocol.handle('media', (request) => {
     let filePath = request.url.replace('media://', '');
     try {
@@ -63,7 +75,6 @@ app.whenReady().then(() => {
       if (process.platform === 'win32' && filePath.startsWith('/')) {
         filePath = filePath.slice(1);
       }
-      // pathToFileURL otomatis membuat URL 'file:///' yang valid dan disukai Chromium
       const fileUrl = require('url').pathToFileURL(filePath).toString();
       return net.fetch(fileUrl);
     } catch (e) {
@@ -75,18 +86,41 @@ app.whenReady().then(() => {
   createWindow();
 });
 
+// ============================================
+// FIX: Tambahkan handler window-all-closed
+// Tanpa ini, aplikasi tidak akan tertutup di Windows/Linux
+// ============================================
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});
+
+// ============================================
+// SERVICES INITIALIZATION
+// ============================================
 async function initializeServices() {
   const keyStorage = new KeyStorage()
   const apiKeys = await keyStorage.loadKeys()
 
   if (apiKeys.length > 0) {
     geminiService = new GeminiService(apiKeys)
-    videoProcessor = VideoProcessor // <--- HAPUS kata "new" dan "(apiKeys)"
+    videoProcessor = VideoProcessor
     longVideoProcessor = new LongVideoProcessor(apiKeys)
     return true
   }
   return false
 }
+
+// ============================================
+// IPC HANDLERS
+// ============================================
 
 ipcMain.handle('save-api-keys', async (event, keysArray) => {
   try {
@@ -116,7 +150,14 @@ ipcMain.handle('get-gemini-stats', () => {
 
 ipcMain.handle('analyze-video', async (event, { videoPath, settings }) => {
   try {
-    if (!geminiService) await initializeServices()
+    // FIX: Null safety — pastikan service sudah diinisialisasi
+    if (!geminiService) {
+      const initialized = await initializeServices()
+      if (!initialized) {
+        return { success: false, error: 'API key belum dikonfigurasi. Silakan tambahkan di Settings.' }
+      }
+    }
+    
     const VideoAnalyzerClass = require('./src/services/ai/VideoAnalyzer')
     const analyzer = new VideoAnalyzerClass(geminiService.apiKeys || [])
 
@@ -133,46 +174,50 @@ ipcMain.handle('analyze-video', async (event, { videoPath, settings }) => {
 
 ipcMain.handle('detect-watermark', async (event, { videoPath, options = {} }) => {
   try {
-    const fs = require('fs').promises;
-    const path = require('path');
+    const fsSync = require('fs');
+    const pathModule = require('path');
     const { detectWatermark } = require('./src/services/watermarkRemover/detector');
     const { watermarkList } = require('./src/services/watermarkRemover/config');
 
     const tempDir = require('os').tmpdir();
-    const framePath = path.join(tempDir, `frame-detect-${Date.now()}.png`); // Harus PNG karena pngjs
+    const framePath = pathModule.join(tempDir, `frame-detect-${Date.now()}.png`);
 
     // 1. Ambil 1 frame screenshot dari tengah video
     await new Promise((resolve, reject) => {
       ffmpeg(videoPath)
         .screenshots({
           timestamps: ['50%'],
-          filename: path.basename(framePath),
-          folder: path.dirname(framePath),
+          filename: pathModule.basename(framePath),
+          folder: pathModule.dirname(framePath),
           size: '1280x720'
         })
         .on('end', resolve)
         .on('error', reject);
     });
 
-    // 2. Lakukan deteksi menggunakan metode Pixelmatch (Sesuai dengan detector.js Anda)
+    // 2. Lakukan deteksi watermark
     let detectedWatermarks = [];
     
-    // Pastikan config watermarkList tersedia dan template-nya ada
     if (watermarkList && watermarkList.length > 0) {
       for (const wm of watermarkList) {
-        // Asumsi wm.template adalah path file template PNG
-        if (require('fs').existsSync(wm.template)) {
-          const area = detectWatermark(framePath, wm.template);
+        // FIX: Resolve path template relatif terhadap root project
+        const templatePath = pathModule.isAbsolute(wm.template) 
+          ? wm.template 
+          : pathModule.join(__dirname, wm.template);
           
-          // Jika x dan y tidak 0 atau diff memenuhi syarat, berarti terdeteksi
+        if (fsSync.existsSync(templatePath)) {
+          const area = detectWatermark(framePath, templatePath);
+          
           if (area) {
             detectedWatermarks.push({
               type: wm.name || 'Watermark',
               position: `X:${area.x} Y:${area.y}`,
-              confidence: 0.95, // Dummy confidence
+              confidence: 0.95,
               area: area
             });
           }
+        } else {
+          console.warn(`Template watermark tidak ditemukan: ${templatePath}`);
         }
       }
     }
@@ -205,7 +250,7 @@ ipcMain.handle('remove-watermark', async (event, { videoPath, options }) => {
   }
 })
 
-// FIX 2: Tambahkan Handler untuk Fitur Tombol Download Video (Taruh di deretan IPC Handlers bawah)
+// Handler untuk tombol Download/Simpan Video
 ipcMain.handle('save-file', async (event, { sourcePath, defaultName }) => {
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     defaultPath: defaultName,
@@ -227,7 +272,7 @@ ipcMain.handle('split-long-video', async (event, { videoPath, options }) => {
     if (!longVideoProcessor) {
       const initialized = await initializeServices()
       if (!initialized || !longVideoProcessor) {
-        return { success: false, error: 'No API keys configured or service failed to start' }
+        return { success: false, error: 'API key belum dikonfigurasi. Silakan tambahkan di Settings.' }
       }
     }
 
@@ -238,7 +283,6 @@ ipcMain.handle('split-long-video', async (event, { videoPath, options }) => {
       platform: options.platform || 'tiktok',
       seriesName: options.seriesName,
       detectionStrategy: options.strategy || 'comprehensive',
-      // FIX: Callback untuk mengirim sinyal progress ke Frontend
       onProgress: (status) => {
         event.sender.send('split-progress', status);
       }
@@ -260,6 +304,11 @@ ipcMain.handle('get-video-info', async (event, videoPath) => {
     })
 
     const videoStream = metadata.streams.find(s => s.codec_type === 'video')
+    
+    if (!videoStream) {
+      return { success: false, error: 'Tidak ditemukan stream video dalam file ini.' }
+    }
+    
     const frameRateStr = videoStream.r_frame_rate || '30/1'
     const [num, den] = frameRateStr.split('/')
 
@@ -270,7 +319,7 @@ ipcMain.handle('get-video-info', async (event, videoPath) => {
         size: metadata.format.size,
         width: videoStream.width,
         height: videoStream.height,
-        fps: (Number(num) / Number(den)) || 30, // FIX: Perhitungan manual tanpa menggunakan eval()
+        fps: (Number(num) / Number(den)) || 30,
         bitrate: metadata.format.bit_rate
       }
     }
