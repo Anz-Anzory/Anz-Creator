@@ -126,10 +126,9 @@ async function processVideo(inputVideo, options = {}) {
       }
     }
 
-    // Pastikan frame final tersedia
+    // Pastikan frame final tersedia — SELALU overwrite dengan hasil terbaru
     const finalFrame = path.join(finalDir, frame);
-    if (!fs.existsSync(finalFrame)) {
-      fs.copyFileSync(currentFramePath, finalFrame);
+    fs.copyFileSync(currentFramePath, finalFrame);
     }
   }
 
