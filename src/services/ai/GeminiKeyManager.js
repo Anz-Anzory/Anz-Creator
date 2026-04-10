@@ -33,7 +33,10 @@ class GeminiKeyManager {
     });
 
     if (availableKeys.length === 0) {
-      throw new Error('Semua API keys sedang di rate limit. Tunggu beberapa menit...');
+      // FIX: Reset semua key jika semuanya terkena limit, beri kesempatan ulang
+      console.warn('Semua key terkena limit/gagal. Mereset status...');
+      this.resetAll();
+      return { key: this.apiKeys[0], index: 0 };
     }
 
     const availableIndex = this.apiKeys.indexOf(availableKeys[0]);
@@ -46,7 +49,6 @@ class GeminiKeyManager {
   }
 
   rotateKey() {
-    // FIX: Dihapus this.failedKeys.add() agar API Key tidak dibanned permanen saat antre
     this.currentIndex = (this.currentIndex + 1) % this.apiKeys.length;
     console.log(`Rotated to key index: ${this.currentIndex}`);
     return this.getCurrentKey();
@@ -62,6 +64,7 @@ class GeminiKeyManager {
       total: this.apiKeys.length,
       active: this.apiKeys.length - this.failedKeys.size,
       failed: this.failedKeys.size,
+      rateLimited: this.rateLimitReset.size,
       currentIndex: this.currentIndex
     };
   }
