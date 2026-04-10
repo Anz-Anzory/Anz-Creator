@@ -1,5 +1,3 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-
 class GeminiKeyManager {
   constructor(apiKeys = []) {
     this.apiKeys = apiKeys;
