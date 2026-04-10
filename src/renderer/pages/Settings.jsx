@@ -104,9 +104,9 @@ function Settings() {
         <p style={{ marginTop: '1rem', fontSize: '0.8rem', opacity: 0.5 }}>
           💡 Dapatkan API key gratis di{' '}
           <span style={{ color: '#667eea', cursor: 'pointer' }} 
-                onClick={() => require('electron').shell?.openExternal('https://makersuite.google.com/app/apikey')}>
-            Google AI Studio
-          </span>
+      onClick={() => window.electron.ipcRenderer.invoke('open-external', 'https://makersuite.google.com/app/apikey')}>
+  Google AI Studio
+</span>
         </p>
       </div>
 
