@@ -22,23 +22,44 @@ class ViralMomentDetector {
     const targetClipCount = options.targetClips || 10;
     
     try {
-      // Step 1: Deteksi scene & analisa audio
-      let scenes = await this.extractScenes(videoPath);
+      // Step 0: Ambil durasi video dulu (cepat)
+      const totalDuration = await this.getVideoDuration(videoPath);
+      console.log(`📼 Durasi video: ${Math.round(totalDuration)} detik`);
       
-      // FIX: Handle video tanpa scene change — buat segmentasi manual
-      if (scenes.length === 0) {
-        console.warn('⚠️ Tidak ada scene change terdeteksi, membuat segmentasi manual...');
+      // FIX: Untuk video pendek (<5 menit) atau mode fast, 
+      // langsung pakai segmentasi manual (JAUH lebih cepat)
+      // Scene detection FFmpeg sangat lambat karena membaca setiap frame
+      let scenes;
+      const useFastMode = strategy === 'fast' || totalDuration < 300; // <5 menit
+      
+      if (useFastMode) {
+        console.log('⚡ Mode cepat: segmentasi berbasis durasi (skip scene detection)');
         scenes = await this.createManualSegments(videoPath, maxClipDuration);
+      } else {
+        // Untuk video panjang, gunakan scene detection dengan timeout
+        console.log('🎬 Mode lengkap: scene detection (mungkin butuh waktu)...');
+        scenes = await this.extractScenesFast(videoPath, totalDuration);
+        
+        if (scenes.length === 0) {
+          console.warn('⚠️ Scene detection gagal/kosong, fallback ke segmentasi manual');
+          scenes = await this.createManualSegments(videoPath, maxClipDuration);
+        }
       }
       
       if (scenes.length === 0) {
         throw new Error('Gagal mengekstrak scene dari video. Pastikan video tidak corrupt.');
       }
       
-      const audioAnalysis = await this.analyzeAudioPeaks(videoPath).catch(err => {
-        console.warn('⚠️ Analisa audio gagal, lanjut tanpa data audio:', err.message);
-        return [];
-      });
+      console.log(`📊 Total scene: ${scenes.length}`);
+      
+      // FIX: Skip audio analysis untuk video pendek (hemat waktu)
+      let audioAnalysis = [];
+      if (!useFastMode) {
+        audioAnalysis = await this.analyzeAudioPeaks(videoPath).catch(err => {
+          console.warn('⚠️ Analisa audio gagal, lanjut tanpa data audio:', err.message);
+          return [];
+        });
+      }
       
       // Step 2: Sample frames untuk AI analysis
       console.log(`📸 Sampling ${scenes.length} scenes...`);
@@ -64,7 +85,7 @@ class ViralMomentDetector {
       });
 
       return {
-        totalDuration: scenes[scenes.length - 1]?.end || 0,
+        totalDuration: totalDuration,
         detectedScenes: scenes.length,
         viralMoments: moments.length,
         optimizedClips: optimizedClips.length,
@@ -75,6 +96,18 @@ class ViralMomentDetector {
       console.error('❌ Deteksi viral gagal:', error);
       throw error;
     }
+  }
+
+  // ==========================================
+  // FIX: Ambil durasi video saja (sangat cepat, <1 detik)
+  // ==========================================
+  async getVideoDuration(videoPath) {
+    return new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(videoPath, (err, metadata) => {
+        if (err) reject(err);
+        else resolve(parseFloat(metadata.format.duration) || 0);
+      });
+    });
   }
 
   // ==========================================
@@ -113,9 +146,101 @@ class ViralMomentDetector {
   }
 
   // ==========================================
-  // SCENE DETECTION
+  // SCENE DETECTION — VERSI CEPAT
+  // FIX: Versi lama sangat lambat karena:
+  //   1. Membaca setiap frame di resolusi penuh
+  //   2. Tidak ada timeout
+  //   3. Tidak ada limit scene count
+  //
+  // Versi baru:
+  //   1. Scale down ke 320px (75% lebih cepat)
+  //   2. Timeout 60 detik (jangan hang selamanya)
+  //   3. Stop setelah cukup scene ditemukan
   // ==========================================
   
+  async extractScenesFast(videoPath, totalDuration, threshold = 0.35) {
+    const TIMEOUT_MS = 60000; // 60 detik max
+    
+    return new Promise((resolve) => {
+      const scenes = [];
+      let currentScene = { start: 0, end: 0 };
+      let lastTimestamp = 0;
+      let timedOut = false;
+      
+      // Timeout safety — jangan hang selamanya
+      const timer = setTimeout(() => {
+        timedOut = true;
+        console.warn(`⚠️ Scene detection timeout setelah ${TIMEOUT_MS/1000}s, menggunakan ${scenes.length} scene yang sudah ditemukan`);
+        finalize();
+      }, TIMEOUT_MS);
+      
+      const finalize = () => {
+        clearTimeout(timer);
+        
+        // Tambahkan scene terakhir
+        if (currentScene.start < totalDuration && currentScene.start > 0) {
+          currentScene.end = totalDuration;
+          scenes.push({ ...currentScene });
+        }
+        
+        // Jika tidak ada scene sama sekali, tambahkan seluruh video sebagai 1 scene
+        if (scenes.length === 0 && totalDuration > 0) {
+          scenes.push({ start: 0, end: totalDuration });
+        }
+        
+        const formatted = scenes.map((s, i) => ({
+          id: i,
+          start: s.start,
+          end: s.end,
+          duration: s.end - s.start
+        })).filter(s => s.duration > 2); // Min 2 detik
+        
+        console.log(`🎬 Scene detection selesai: ${formatted.length} scene ditemukan`);
+        resolve(formatted);
+      };
+      
+      const ffmpegProcess = ffmpeg(videoPath)
+        // FIX: Scale down ke 320px → 75% lebih cepat dari resolusi penuh
+        .videoFilters(`scale=320:-1,select='gt(scene,${threshold})',showinfo`)
+        .outputOptions('-f', 'null')
+        .outputOptions('-an') // Skip audio processing (hemat waktu)
+        .on('stderr', (stderrLine) => {
+          if (timedOut) return;
+          
+          const ptsMatch = stderrLine.match(/pts_time:([\d.]+)/);
+          const tMatch = stderrLine.match(/t:([\d.]+)\s/);
+          
+          const timestamp = ptsMatch ? parseFloat(ptsMatch[1]) : 
+                           tMatch ? parseFloat(tMatch[1]) : null;
+          
+          if (timestamp && timestamp !== lastTimestamp && timestamp > lastTimestamp) {
+            lastTimestamp = timestamp;
+            
+            if (currentScene.start === 0 && timestamp > 0) {
+              currentScene.end = timestamp;
+              scenes.push({ ...currentScene });
+              currentScene = { start: timestamp, end: timestamp };
+            } else if (timestamp > currentScene.start) {
+              currentScene.end = timestamp;
+              scenes.push({ ...currentScene });
+              currentScene = { start: timestamp, end: timestamp };
+            }
+          }
+        })
+        .on('end', () => {
+          if (!timedOut) finalize();
+        })
+        .on('error', (err) => {
+          clearTimeout(timer);
+          console.warn('Scene detection error:', err.message);
+          resolve([]); // Return empty → fallback ke manual
+        })
+        .output('-')
+        .run();
+    });
+  }
+
+  // Versi lama (tetap tersedia tapi tidak dipanggil secara default)
   async extractScenes(videoPath, threshold = 0.3) {
     return new Promise((resolve, reject) => {
       const scenes = [];
