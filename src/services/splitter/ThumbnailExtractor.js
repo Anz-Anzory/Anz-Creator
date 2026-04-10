@@ -17,22 +17,22 @@ class ThumbnailExtractor {
     
     await fs.mkdir(this.tempDir, { recursive: true });
     
-    // FIX: Hitung posisi berdasarkan durasi CLIP, bukan plan.duration
-    // plan.duration bisa berbeda dari durasi file clip sebenarnya
     const clipDuration = await this.getClipDuration(clipPath);
     const positions = this.calculateThumbnailPositions(clipDuration, plan, count);
     
+    // Detect orientasi video
+    const isPortrait = await new Promise((resolve) => {
+      ffmpeg.ffprobe(clipPath, (err, metadata) => {
+        if (err) return resolve(true); // Default portrait
+        const video = metadata.streams.find(s => s.codec_type === 'video');
+        resolve(video ? video.height > video.width : true);
+      });
+    });
+    
     for (let i = 0; i < positions.length; i++) {
-      const timestamp = positions[i];
-      // Nama file unik per clip+index (tanpa Date.now agar stabil)
-      const thumbName = `thumb-${plan.id}-${i}.jpg`;
-      
-      try {
-        // FIX: Gunakan seek + output frame tunggal (lebih reliable dari .screenshots())
-        // .screenshots() kadang menyimpan dengan nama file berbeda dari yang kita harapkan
-        const outputPath = path.join(this.tempDir, thumbName);
-        
-        await this.captureFrame(clipPath, timestamp, outputPath);
+      // ... (sama seperti sebelumnya, tapi panggil captureFrame dengan isPortrait)
+        await this.captureFrame(clipPath, timestamp, outputPath, isPortrait);
+      // ...
         
         // FIX: Verifikasi file BENAR-BENAR ada setelah capture
         if (!fsSync.existsSync(outputPath)) {
