@@ -1,2 +1,3 @@
-echo "# Placeholder untuk folder FFmpeg" > resources/ffmpeg/.gitkeep
-echo "# Binary tidak di-commit, akan di-download otomatis saat setup" >> resources/ffmpeg/.gitkeep
+# Placeholder untuk folder FFmpeg
+# Binary tidak di-commit, akan di-download otomatis saat setup
+# Jalankan: npm run setup:ffmpeg
