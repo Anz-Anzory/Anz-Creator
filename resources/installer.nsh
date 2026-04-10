@@ -4,10 +4,6 @@
 !macro customInstall
   ; Create FFmpeg directory if not exists
   CreateDirectory "$INSTDIR\resources\ffmpeg"
-  
-  ; Add to PATH (optional)
-  ; Push "$INSTDIR"
-  ; Call AddToPath
 !macroend
 
 !macro customUnInstall
