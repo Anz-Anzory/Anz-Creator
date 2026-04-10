@@ -1,5 +1,6 @@
 function trackWatermark(prev, frameIndex) {
-  // simple tracking (bisa kamu upgrade nanti)
+  // Simple tracking — posisi watermark diasumsikan tetap
+  // Bisa di-upgrade nanti dengan optical flow
   return {
     x: prev.x,
     y: prev.y,
