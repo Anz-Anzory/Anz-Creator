@@ -68,18 +68,32 @@ function createWindow() {
 
 app.whenReady().then(() => {
   // Protocol 'media://' untuk akses file lokal dari renderer
+  // FIX: Handle Windows short path (~1), spasi, dan karakter unicode
   protocol.handle('media', (request) => {
     let filePath = request.url.replace('media://', '');
     try {
       filePath = decodeURIComponent(filePath);
+      
+      // Windows: hapus leading slash dari URL (media:///C:/... → C:/...)
       if (process.platform === 'win32' && filePath.startsWith('/')) {
         filePath = filePath.slice(1);
       }
+      
+      // FIX: Resolve Windows short path (8.3 format, contoh: SALSA_~1)
+      // fs.realpathSync akan mengkonversi short path ke long path yang valid
+      const fsSync = require('fs');
+      if (fsSync.existsSync(filePath)) {
+        filePath = fsSync.realpathSync(filePath);
+      } else {
+        console.warn(`Media file tidak ditemukan: ${filePath}`);
+        return new Response('File Not Found', { status: 404 });
+      }
+      
       const fileUrl = require('url').pathToFileURL(filePath).toString();
       return net.fetch(fileUrl);
     } catch (e) {
-      console.error("Media protocol error:", e);
-      return new Response('Not Found', { status: 404 });
+      console.error("Media protocol error:", e.message, "| Path:", filePath);
+      return new Response('Error loading file', { status: 500 });
     }
   });
 
