@@ -97,6 +97,7 @@ async function processVideo(inputVideo, options = {}) {
     }
 
     let currentFramePath = framePath;
+    let lastSuccessPath = framePath; // Track frame terakhir yang berhasil
 
     // Proses setiap watermark yang terdeteksi
     for (let w = 0; w < detectedAreas.length; w++) {
