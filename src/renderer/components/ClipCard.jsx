@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
 
+// FIX: Helper untuk convert Windows path ke media:// URL yang valid
+// Windows path: C:\Users\SALSA_~1\AppData\...\file.jpg
+// Media URL:    media://C:/Users/SALSA_~1/AppData/.../file.jpg
+function toMediaUrl(filePath) {
+  if (!filePath) return '';
+  // Ganti backslash → forward slash agar valid sebagai URL
+  const normalized = filePath.replace(/\\/g, '/');
+  return `media://${normalized}`;
+}
+
 function ClipCard({ clip }) {
   const [showMetadata, setShowMetadata] = useState(false);
 
@@ -32,7 +42,7 @@ function ClipCard({ clip }) {
         <span className="fyp-score" style={{ fontSize: '1rem' }}>🔥 {clip.metadata?.fypScore || 0}/100</span>
       </div>
       
-      <video src={`media://${clip.videoPath}`} controls style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
+      <video src={toMediaUrl(clip.videoPath)} controls style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
       
       <div className="clip-meta">
         <h4>{clip.metadata?.title || 'Untitled'}</h4>
@@ -42,7 +52,7 @@ function ClipCard({ clip }) {
         
         <div className="thumbnails">
           {clip.thumbnails?.map((thumb, tidx) => (
-            <img key={tidx} src={`media://${thumb.path}`} alt={`Thumbnail ${tidx + 1}`} 
+            <img key={tidx} src={toMediaUrl(thumb.path)} alt={`Thumbnail ${tidx + 1}`} 
                  className={thumb.rank === 1 ? 'best' : ''} 
                  title={`Kualitas: ${thumb.qualityScore}`} />
           ))}
