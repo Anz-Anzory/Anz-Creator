@@ -1,21 +1,85 @@
-const { execSync } = require("child_process");
+const ffmpeg = require('fluent-ffmpeg');
+const path = require('path');
+const fs = require('fs');
 
-function extractFrames(input) {
-  execSync(`ffmpeg -i ${input} frames/frame_%04d.png`);
+/**
+ * Ekstrak semua frame dari video ke direktori output
+ * FIX: Sebelumnya pakai execSync('ffmpeg ...') yang tidak menggunakan path ffmpeg yang sudah dikonfigurasi
+ */
+function extractFrames(inputVideo, outputDir) {
+  return new Promise((resolve, reject) => {
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+    
+    ffmpeg(inputVideo)
+      .outputOptions(['-vf', 'fps=1']) // 1 frame per detik untuk efisiensi
+      .output(path.join(outputDir, 'frame_%04d.png'))
+      .on('end', () => {
+        console.log('✅ Frame extraction selesai');
+        resolve();
+      })
+      .on('error', (err) => {
+        reject(new Error(`ExtractFrames gagal: ${err.message}`));
+      })
+      .run();
+  });
 }
 
-function cropWatermark(input, output, cfg) {
+/**
+ * Crop area watermark dari frame
+ */
+function cropWatermark(inputFrame, outputPath, cfg) {
   const { width, height, x, y } = cfg;
-  execSync(`ffmpeg -i ${input} -filter:v "crop=${width}:${height}:${x}:${y}" ${output}`);
+  
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputFrame)
+      .outputOptions(['-vf', `crop=${width}:${height}:${x}:${y}`])
+      .output(outputPath)
+      .on('end', resolve)
+      .on('error', (err) => reject(new Error(`CropWatermark gagal: ${err.message}`)))
+      .run();
+  });
 }
 
-function overlayBack(frame, cleaned, output, cfg) {
+/**
+ * Overlay frame yang sudah dibersihkan kembali ke frame asli
+ */
+function overlayBack(frameInput, cleanedInput, outputPath, cfg) {
   const { x, y } = cfg;
-  execSync(`ffmpeg -i ${frame} -i ${cleaned} -filter_complex "overlay=${x}:${y}" ${output}`);
+  
+  return new Promise((resolve, reject) => {
+    ffmpeg(frameInput)
+      .input(cleanedInput)
+      .complexFilter([`overlay=${x}:${y}`])
+      .output(outputPath)
+      .on('end', resolve)
+      .on('error', (err) => reject(new Error(`OverlayBack gagal: ${err.message}`)))
+      .run();
+  });
 }
 
-function buildVideo() {
-  execSync(`ffmpeg -framerate 30 -i frames_clean/frame_%04d.png -c:v libx264 output.mp4`);
+/**
+ * Build video dari frame-frame yang sudah dibersihkan
+ */
+function buildVideo(framesDir, outputPath, fps = 30) {
+  return new Promise((resolve, reject) => {
+    ffmpeg(path.join(framesDir, 'frame_%04d.png'))
+      .inputOptions([`-framerate ${fps}`])
+      .outputOptions([
+        '-c:v libx264',
+        '-crf 23',
+        '-preset fast',
+        '-pix_fmt yuv420p'
+      ])
+      .output(outputPath)
+      .on('end', () => {
+        console.log(`✅ Video berhasil dibuild: ${outputPath}`);
+        resolve(outputPath);
+      })
+      .on('error', (err) => reject(new Error(`BuildVideo gagal: ${err.message}`)))
+      .run();
+  });
 }
 
 module.exports = {
