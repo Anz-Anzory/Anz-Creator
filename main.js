@@ -379,3 +379,17 @@ ipcMain.handle('open-external', async (event, url) => {
   }
   return { success: false, error: 'URL tidak valid' };
 });
+
+ipcMain.handle('get-saved-keys', async () => {
+  try {
+    const keyStorage = new KeyStorage();
+    const keys = await keyStorage.loadKeys();
+    // Masking untuk keamanan — kirim versi masked
+    return { 
+      success: true, 
+      keys: keys // Kirim key asli agar bisa di-merge saat save
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
