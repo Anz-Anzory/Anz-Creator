@@ -20,7 +20,10 @@ class VideoAnalyzer {
       );
       
       const audioTranscription = options.transcribeAudio 
-        ? await this.transcribeAudio(videoPath)
+        ? await this.transcribeAudio(videoPath).catch(err => {
+            console.warn('Audio transcription gagal, lanjutkan tanpa transkripsi:', err.message);
+            return null;
+          })
         : null;
 
       const metadata = await this.getVideoMetadata(videoPath);
@@ -53,7 +56,7 @@ class VideoAnalyzer {
   }
 
   async extractFrames(videoPath, frameCount = 5) {
-    const tempDir = path.join(require('os').tmpdir(), 'video-frames');
+    const tempDir = path.join(require('os').tmpdir(), 'video-frames-' + Date.now());
     await fs.mkdir(tempDir, { recursive: true });
 
     const duration = await new Promise((resolve, reject) => {
@@ -91,13 +94,16 @@ class VideoAnalyzer {
       });
     }
 
-    await fs.rm(tempDir, { recursive: true, force: true });
+    // Bersihkan temp dir setelah semua frame diekstrak
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     
     return frames;
   }
 
   async transcribeAudio(videoPath) {
-    const audioPath = videoPath.replace('.mp4', '.mp3');
+    const tempDir = path.join(require('os').tmpdir(), 'audio-temp-' + Date.now());
+    await fs.mkdir(tempDir, { recursive: true });
+    const audioPath = path.join(tempDir, 'audio.mp3');
     
     await new Promise((resolve, reject) => {
       ffmpeg(videoPath)
@@ -126,7 +132,8 @@ class VideoAnalyzer {
       return result.response.text();
     }, 'Audio Transcription');
 
-    await fs.unlink(audioPath);
+    // Bersihkan temp
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     
     return transcription;
   }
@@ -135,40 +142,75 @@ class VideoAnalyzer {
     return new Promise((resolve, reject) => {
       ffmpeg.ffprobe(videoPath, (err, metadata) => {
         if (err) reject(err);
-        else resolve({
-          duration: metadata.format.duration,
-          size: metadata.format.size,
-          bitrate: metadata.format.bit_rate,
-          width: metadata.streams[0].width,
-          height: metadata.streams[0].height,
-          fps: eval(metadata.streams[0].r_frame_rate),
-          codec: metadata.streams[0].codec_name
-        });
+        else {
+          const videoStream = metadata.streams.find(s => s.codec_type === 'video');
+          
+          if (!videoStream) {
+            reject(new Error('Tidak ditemukan stream video'));
+            return;
+          }
+          
+          // FIX: Hapus eval() — gunakan kalkulasi manual yang aman
+          const frameRateStr = videoStream.r_frame_rate || '30/1';
+          const [num, den] = frameRateStr.split('/');
+          const fps = den ? (Number(num) / Number(den)) : Number(num);
+          
+          resolve({
+            duration: metadata.format.duration,
+            size: metadata.format.size,
+            bitrate: metadata.format.bit_rate,
+            width: videoStream.width,
+            height: videoStream.height,
+            fps: fps || 30,
+            codec: videoStream.codec_name
+          });
+        }
       });
     });
   }
 
   parseTitles(titleText) {
+    if (!titleText) return ['Untitled Video'];
+    
     const titles = titleText
       .split('\n')
       .filter(line => /^\d+\./.test(line.trim()))
-      .map(line => line.replace(/^\d+\.\s*/, '').trim());
+      .map(line => line.replace(/^\d+\.\s*/, '').trim())
+      .filter(line => line.length > 0);
     
     return titles.length > 0 ? titles : [titleText.trim()];
   }
 
   parseHashtags(hashtagText) {
+    if (!hashtagText) return ['#fyp', '#viral'];
+    
     return hashtagText
       .split(/[\s,]+/)
       .filter(tag => tag.startsWith('#'))
-      .map(tag => tag.trim());
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 1);
   }
 
   parseFYPScore(scoreText) {
+    if (!scoreText) return { score: 70, reasoning: 'Tidak dapat dianalisa', suggestions: [] };
+    
     try {
-      const jsonMatch = scoreText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+      // Coba parse JSON langsung
+      let cleanText = scoreText.trim();
+      cleanText = cleanText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
       
+      const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          score: parsed.score || 70,
+          reasoning: parsed.reasoning || scoreText,
+          breakdown: parsed.breakdown || {},
+          suggestions: parsed.suggestions || []
+        };
+      }
+      
+      // Fallback: cari pola "XX/100"
       const scoreMatch = scoreText.match(/(\d+)\s*\/\s*100/);
       return {
         score: scoreMatch ? parseInt(scoreMatch[1]) : 70,
