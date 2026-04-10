@@ -16,7 +16,7 @@ class VideoAnalyzer {
       
       const visualAnalysis = await this.gemini.analyzeVideo(
         frames,
-        'Analyze this video visually. Describe: main subject, mood/atmosphere, colors, any text visible, people/objects, actions happening. Be specific about content type and style.'
+        'Analisa video ini secara visual dalam Bahasa Indonesia. Jelaskan: subjek utama, suasana/mood, warna dominan, teks yang terlihat, orang/objek, dan aksi yang terjadi. Jelaskan juga jenis konten dan gaya visualnya.'
       );
       
       const audioTranscription = options.transcribeAudio 
@@ -120,7 +120,7 @@ class VideoAnalyzer {
       const model = genAI.getGenerativeModel({ model: modelName });
       
       const result = await model.generateContent([
-        'Transcribe this audio and summarize the main points:',
+        'Transkripsikan audio ini dalam Bahasa Indonesia dan rangkum poin-poin utamanya:',
         {
           inlineData: {
             data: audioData,
