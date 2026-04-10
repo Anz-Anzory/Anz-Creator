@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell } = require('electron')
 const path = require('path')
 const fs = require('fs').promises
 const isDev = !app.isPackaged
@@ -372,3 +372,12 @@ ipcMain.handle('select-output-dir', async () => {
   if (!result.canceled) return { success: true, path: result.filePaths[0] }
   return { success: false }
 })
+
+ipcMain.handle('open-external', async (event, url) => {
+  // Validasi URL agar hanya bisa buka https
+  if (typeof url === 'string' && url.startsWith('https://')) {
+    await shell.openExternal(url);
+    return { success: true };
+  }
+  return { success: false, error: 'URL tidak valid' };
+});
