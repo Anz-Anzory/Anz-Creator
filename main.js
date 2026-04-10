@@ -67,33 +67,56 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // ============================================
   // Protocol 'media://' untuk akses file lokal dari renderer
-  // FIX: Handle Windows short path (~1), spasi, dan karakter unicode
+  // 
+  // FIX TOTAL — Masalah sebelumnya:
+  // 1. CSP di index.html tidak mengizinkan media:// → ditambahkan
+  // 2. Backslash Windows (\) tidak valid di URL → di-convert ke /
+  // 3. Short path (~1) tidak bisa dibaca Chromium → resolve dengan realpathSync
+  // 4. Path dengan spasi/unicode gagal → encode URI component
+  // ============================================
   protocol.handle('media', (request) => {
-    let filePath = request.url.replace('media://', '');
     try {
+      // Ambil path dari URL — hapus 'media://' prefix
+      let rawUrl = request.url;
+      
+      // media://C:/path atau media:///C:/path → ambil path saja
+      let filePath = rawUrl.slice('media://'.length);
+      
+      // Decode URL encoding (%20 → spasi, dll)
       filePath = decodeURIComponent(filePath);
       
-      // Windows: hapus leading slash dari URL (media:///C:/... → C:/...)
-      if (process.platform === 'win32' && filePath.startsWith('/')) {
-        filePath = filePath.slice(1);
+      // Hapus leading slash di Windows (media:///C:/... → C:/...)
+      if (process.platform === 'win32') {
+        // Bisa ada 1-3 leading slash tergantung browser
+        filePath = filePath.replace(/^\/+/, '');
+        
+        // Pastikan path menggunakan backslash Windows
+        filePath = filePath.replace(/\//g, '\\');
       }
       
-      // FIX: Resolve Windows short path (8.3 format, contoh: SALSA_~1)
-      // fs.realpathSync akan mengkonversi short path ke long path yang valid
       const fsSync = require('fs');
+      
+      // Resolve short path Windows (SALSA_~1 → Salsa Nazwa)
       if (fsSync.existsSync(filePath)) {
-        filePath = fsSync.realpathSync(filePath);
+        try {
+          filePath = fsSync.realpathSync(filePath);
+        } catch (e) {
+          // realpathSync gagal — pakai path apa adanya
+        }
       } else {
-        console.warn(`Media file tidak ditemukan: ${filePath}`);
-        return new Response('File Not Found', { status: 404 });
+        console.warn(`[media://] File tidak ditemukan: ${filePath}`);
+        return new Response('File Not Found', { status: 404, headers: { 'Content-Type': 'text/plain' } });
       }
       
+      // Convert ke file:// URL yang valid untuk Chromium
       const fileUrl = require('url').pathToFileURL(filePath).toString();
       return net.fetch(fileUrl);
+      
     } catch (e) {
-      console.error("Media protocol error:", e.message, "| Path:", filePath);
-      return new Response('Error loading file', { status: 500 });
+      console.error("[media://] Error:", e.message);
+      return new Response('Internal Error', { status: 500, headers: { 'Content-Type': 'text/plain' } });
     }
   });
 
