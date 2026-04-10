@@ -1,4 +1,5 @@
 const fs = require("fs");
+const fsPromises = require("fs").promises;
 const path = require("path");
 const fetch = require("node-fetch");
 const os = require("os");
@@ -8,12 +9,13 @@ const { inpaint } = require("./ai");
 const { detectWatermark } = require("./detector");
 const { trackWatermark } = require("./tracker");
 const { watermarkList, settings } = require("./config");
+
 const tempBasePath = path.join(os.tmpdir(), 'anz-video-temp');
 
-async function processVideo(inputVideo) {
-  console.log("🚀 Start processing...");
+async function processVideo(inputVideo, options = {}) {
+  console.log("🚀 Mulai proses penghapusan watermark...");
 
-  // FIX: Hapus direktori temp secara menyeluruh (jika sudah ada) dari eksekusi sebelumnya
+  // Bersihkan direktori temp dari eksekusi sebelumnya
   if (fs.existsSync(tempBasePath)) {
     fs.rmSync(tempBasePath, { recursive: true, force: true });
   }
@@ -24,20 +26,26 @@ async function processVideo(inputVideo) {
   const cleanDir = path.join(tempBasePath, "clean");
   const finalDir = path.join(tempBasePath, "frames_clean");
 
-  // buat folder
+  // Buat semua folder kerja
   [framesDir, croppedDir, cleanDir, finalDir].forEach(dir => {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   });
 
-  // extract frame
-  extractFrames(inputVideo);
+  // FIX: Gunakan fungsi async yang benar dan path output yang tepat
+  await extractFrames(inputVideo, framesDir);
 
-  // FIX: Pengurutan frame menggunakan Regex Parsing agar terbaca secara numerik
+  // Pengurutan frame secara numerik
   const files = fs.readdirSync(framesDir).sort((a, b) => {
-    const numA = parseInt(a.match(/\d+/) || [0], 10);
-    const numB = parseInt(b.match(/\d+/) || [0], 10);
+    const numA = parseInt((a.match(/\d+/) || ['0'])[0], 10);
+    const numB = parseInt((b.match(/\d+/) || ['0'])[0], 10);
     return numA - numB;
   });
+
+  if (files.length === 0) {
+    throw new Error('Tidak ada frame yang berhasil diekstrak dari video.');
+  }
+
+  console.log(`📸 Total frame: ${files.length}`);
 
   let detectedAreas = [];
 
@@ -47,60 +55,94 @@ async function processVideo(inputVideo) {
 
     console.log(`🎬 Frame ${i + 1}/${files.length}`);
 
-    // detect hanya di frame pertama
+    // Deteksi watermark hanya di frame pertama
     if (i === 0) {
-      detectedAreas = watermarkList.map(wm => {
-        console.log(`🔍 Detecting: ${wm.name}`);
-        return detectWatermark(framePath, wm.template);
-      });
+      detectedAreas = [];
+      for (const wm of watermarkList) {
+        // FIX: Resolve path template dengan benar
+        const templatePath = path.isAbsolute(wm.template)
+          ? wm.template
+          : path.join(__dirname, '..', '..', '..', wm.template);
+          
+        if (fs.existsSync(templatePath)) {
+          console.log(`🔍 Mendeteksi: ${wm.name}`);
+          const area = detectWatermark(framePath, templatePath);
+          if (area) {
+            detectedAreas.push(area);
+          }
+        } else {
+          console.warn(`⚠️ Template tidak ditemukan: ${templatePath}`);
+        }
+      }
+      
+      if (detectedAreas.length === 0) {
+        console.log('✅ Tidak ada watermark terdeteksi, skip proses.');
+        // Salin video asli sebagai output
+        const outputPath = options.outputPath || inputVideo.replace(/(\.\w+)$/, '_no-watermark$1');
+        await fsPromises.copyFile(inputVideo, outputPath);
+        return { finalPath: outputPath, watermarksRemoved: 0 };
+      }
     } else {
       detectedAreas = detectedAreas.map(area => trackWatermark(area, i));
     }
 
+    // Skip frame berdasarkan setting untuk efisiensi API
+    if (i % settings.processEveryNFrame !== 0) {
+      // Salin frame asli ke folder final
+      const finalFrame = path.join(finalDir, frame);
+      if (!fs.existsSync(finalFrame)) {
+        fs.copyFileSync(framePath, finalFrame);
+      }
+      continue;
+    }
+
     let currentFramePath = framePath;
 
-    // multi watermark loop
+    // Proses setiap watermark yang terdeteksi
     for (let w = 0; w < detectedAreas.length; w++) {
       const area = detectedAreas[w];
-
       const cropPath = path.join(croppedDir, `${w}_${frame}`);
       const cleanedPath = path.join(cleanDir, `${w}_${frame}`);
       const outputPath = path.join(finalDir, `${w}_${frame}`);
 
-      // skip frame biar hemat API
-      if (i % settings.processEveryNFrame !== 0) {
-        continue;
+      try {
+        // Crop area watermark
+        await cropWatermark(currentFramePath, cropPath, area);
+
+        // AI inpainting
+        const resultUrl = await inpaint(cropPath, cropPath);
+
+        // Download hasil inpainting
+        const res = await fetch(resultUrl);
+        const buffer = await res.arrayBuffer();
+        fs.writeFileSync(cleanedPath, Buffer.from(buffer));
+
+        // Overlay kembali ke frame asli
+        await overlayBack(currentFramePath, cleanedPath, outputPath, area);
+
+        currentFramePath = outputPath;
+      } catch (err) {
+        console.warn(`⚠️ Gagal proses watermark ${w} di frame ${i}:`, err.message);
       }
-
-      // crop
-      cropWatermark(currentFramePath, cropPath, area);
-
-      // AI inpaint
-      const resultUrl = await inpaint(cropPath, cropPath);
-
-      // download hasil
-      const res = await fetch(resultUrl);
-      const buffer = await res.arrayBuffer();
-      fs.writeFileSync(cleanedPath, Buffer.from(buffer));
-
-      // overlay balik
-      overlayBack(currentFramePath, cleanedPath, outputPath, area);
-
-      currentFramePath = outputPath;
     }
 
-    // kalau frame tidak diproses
+    // Pastikan frame final tersedia
     const finalFrame = path.join(finalDir, frame);
-
     if (!fs.existsSync(finalFrame)) {
       fs.copyFileSync(currentFramePath, finalFrame);
     }
   }
 
-  // build video
-  buildVideo();
+  // Build video dari frame-frame yang sudah dibersihkan
+  const outputVideoPath = options.outputPath || inputVideo.replace(/(\.\w+)$/, '_no-watermark$1');
+  await buildVideo(finalDir, outputVideoPath);
 
-  console.log("✅ DONE: output.mp4");
+  console.log("✅ SELESAI: " + outputVideoPath);
+  
+  return { 
+    finalPath: outputVideoPath, 
+    watermarksRemoved: detectedAreas.length 
+  };
 }
 
 module.exports = {
