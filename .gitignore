@@ -4,14 +4,11 @@
 node_modules/
 .npm/
 .yarn/
-yarn.lock              # ← YARN di-ignore
+yarn.lock
 yarn-error.log
 npm-debug.log*
 pnpm-debug.log*
 .pnpm-store/
-
-# ⚠️ JANGAN IGNORE package-lock.json (dibutuhkan CI/CD)
-# package-lock.json    ← PASTIKAN INI DI-HAPUS ATAU DI-COMMENT!
 
 # =============================================================================
 # BUILD OUTPUTS
@@ -61,10 +58,8 @@ config.json
 # =============================================================================
 # FFMPEG BINARIES (LARGE FILES - AUTO DOWNLOADED)
 # =============================================================================
-resources/ffmpeg/windows/*
-resources/ffmpeg/mac/*
-resources/ffmpeg/linux/*
-!resources/ffmpeg/**/.gitkeep
+resources/ffmpeg/*
+!resources/ffmpeg/.gitkeep
 
 # FFmpeg archives
 *.zip
@@ -86,7 +81,6 @@ resources/ffmpeg/linux/*
 *.iml
 *.iws
 *.ipr
-out/
 *.sublime-project
 *.sublime-workspace
 *.swp
@@ -115,7 +109,6 @@ ehthumbs_vista.db
 [Dd]esktop.ini
 $RECYCLE.BIN/
 *.lnk
-*~
 .nfs*
 .directory
 .Trash-*
@@ -143,12 +136,6 @@ coverage/
 *.lcov
 .eslintcache
 .stylelintcache
-
-# =============================================================================
-# REACT & FRONTEND
-# =============================================================================
-/build
-/dist
 
 # =============================================================================
 # NATIVE MODULES & BINARIES
