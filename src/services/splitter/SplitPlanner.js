@@ -40,17 +40,25 @@ class SplitPlanner {
   }
 
   calculateBestUploadTime(index, totalClips) {
+    // Gunakan WIB (UTC+7) sebagai default timezone audiens Indonesia
+    const WIB_OFFSET = 7 * 60; // menit
     const now = new Date();
-    const optimalTimes = [11, 15, 19, 21];
     
+    // Convert ke WIB
+    const utcMs = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const wibNow = new Date(utcMs + (WIB_OFFSET * 60000));
+    
+    const optimalTimes = [11, 15, 19, 21]; // Jam WIB
     const timeSlot = optimalTimes[index % optimalTimes.length];
     const dayOffset = Math.floor(index / optimalTimes.length);
     
-    const uploadTime = new Date(now);
+    const uploadTime = new Date(wibNow);
     uploadTime.setDate(uploadTime.getDate() + dayOffset);
     uploadTime.setHours(timeSlot, 0, 0, 0);
     
-    return uploadTime;
+    // Convert kembali ke UTC untuk konsistensi
+    const uploadUtc = new Date(uploadTime.getTime() - (WIB_OFFSET * 60000));
+    return uploadUtc;
   }
 
   generateSeriesPlan(plannedClips, options = {}) {
