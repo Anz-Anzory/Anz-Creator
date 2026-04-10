@@ -32,6 +32,13 @@ function detectWatermark(framePath, templatePath) {
       }
     }
 
+    const totalPixels = tw * th;
+    const diffRatio = best.diff / totalPixels;
+    if (diffRatio > 0.3) {
+      // Terlalu beda = bukan watermark
+      return null;
+    }
+
     return {
       x: best.x,
       y: best.y,
