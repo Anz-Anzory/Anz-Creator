@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 
+// FIX: Helper untuk convert Windows path ke media:// URL yang valid
+function toMediaUrl(filePath) {
+  if (!filePath) return '';
+  return `media://${filePath.replace(/\\/g, '/')}`;
+}
+
 function WatermarkInpaintPanel() {
   const [video, setVideo] = useState(null);
   const [detecting, setDetecting] = useState(false);
@@ -93,7 +99,7 @@ function WatermarkInpaintPanel() {
         <div style={{ marginTop: '1rem' }}>
           <h4>Preview Deteksi:</h4>
           <img 
-            src={`media://${preview}`} 
+            src={toMediaUrl(preview)} 
             alt="Watermark detection" 
             style={{ maxWidth: '100%', borderRadius: '8px' }}
           />
