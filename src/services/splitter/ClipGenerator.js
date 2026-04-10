@@ -8,7 +8,6 @@ class ClipGenerator {
   constructor(apiKeys) {
     this.gemini = new GeminiService(apiKeys);
     this.thumbnailExtractor = new ThumbnailExtractor();
-    // Menyimpan sementara di folder Temp bawaan OS
     this.outputDir = path.join(require('os').tmpdir(), 'generated-clips');
   }
 
@@ -20,7 +19,7 @@ class ClipGenerator {
     for (let i = 0; i < clipPlan.length; i++) {
       const plan = clipPlan[i];
       try {
-        // 1. Ekstrak/Potong Video MP4 dengan Pantauan Progress Real-Time
+        // 1. Potong Video MP4 dengan progress real-time
         const clipPath = await this.extractClip(videoPath, plan, i + 1, (percent) => {
           if (options.onProgress) {
             options.onProgress({
@@ -32,7 +31,7 @@ class ClipGenerator {
           }
         });
 
-        // 2. Generate Metadata (Title, Caption, Hashtag) via AI (Sekarang 3-in-1 agar hemat kuota)
+        // 2. Generate Metadata via AI (3-in-1 JSON)
         if (options.onProgress) {
           options.onProgress({
             current: i + 1, total: clipPlan.length, subPercent: 100,
@@ -45,9 +44,8 @@ class ClipGenerator {
         const thumbnails = await this.thumbnailExtractor.extractThumbnails(clipPath, plan, { count: 3 });
         
         // 4. Kalkulasi Skor FYP Akhir
-        const finalFYPScore = await this.calculateFinalFYPScore(plan, metadata);
+        const finalFYPScore = this.calculateFinalFYPScore(plan, metadata);
 
-        // Gabungkan semua data
         const generatedClip = {
           id: plan.id,
           sequence: plan.sequence || (i + 1),
@@ -73,7 +71,6 @@ class ClipGenerator {
         
       } catch (error) {
         console.error(`Gagal membuat klip ${plan.id}:`, error.message);
-        // Tetap masukkan ke daftar tapi dengan status error agar UI tidak crash
         generatedClips.push({
           id: plan.id,
           sequence: plan.sequence || (i + 1),
@@ -87,7 +84,7 @@ class ClipGenerator {
   }
 
   // ==========================================
-  // FUNGSI POTONG VIDEO (FFMPEG)
+  // POTONG VIDEO (FFMPEG)
   // ==========================================
   async extractClip(videoPath, plan, sequence, onProgressCallback) {
     const outputPath = path.join(this.outputDir, `clip-${String(sequence).padStart(3, '0')}-fyp${plan.fypScore}.mp4`);
@@ -103,8 +100,7 @@ class ClipGenerator {
           '-crf 23',
           '-preset fast',
           '-movflags +faststart',
-          // FIX: Parameter dipisah koma agar tidak error 4294967274 di Windows
-          '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p' 
+          '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p'
         ])
         .on('progress', (progress) => {
           if (progress.percent && onProgressCallback) {
@@ -118,19 +114,16 @@ class ClipGenerator {
     });
   }
 
-// ==========================================
-  // FUNGSI METADATA AI (3-IN-1 JSON)
+  // ==========================================
+  // METADATA AI (3-IN-1 JSON)
   // ==========================================
   async generateMetadata(clipPath, plan) {
     const samples = await this.extractSampleFrames(clipPath);
     
-    // FIX: Tangkap parameter 'modelName' yang dikirim oleh GeminiService (sistem Fallback)
     return this.gemini.executeWithRotation(async (genAI, modelName) => {
-      
-      // Gunakan nama model hasil putaran dari fallbackModels!
       const model = genAI.getGenerativeModel({ model: modelName }); 
       
-      const prompt = `Analyze these video frames for a ${plan.contentType} short video (FYP Score: ${plan.fypScore}).
+      const prompt = `Analyze these video frames for a ${plan.contentType || 'entertainment'} short video (FYP Score: ${plan.fypScore || 50}).
       You MUST return the response EXACTLY as a valid JSON object. Do not include markdown code blocks like \`\`\`json.
       Structure required:
       {
@@ -143,14 +136,14 @@ class ClipGenerator {
       const result = await model.generateContent([prompt, ...images]);
       
       let textResponse = result.response.text().trim();
-      textResponse = textResponse.replace(/^```json/i, '').replace(/```$/i, '').trim();
+      textResponse = textResponse.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
       
       try {
         return JSON.parse(textResponse);
       } catch (err) {
-        console.warn("Gagal parsing JSON dari AI, menggunakan data cadangan (fallback).");
+        console.warn("Gagal parsing JSON dari AI, menggunakan data cadangan.");
         return {
-          title: "Viral Video " + plan.fypScore,
+          title: "Viral Video " + (plan.fypScore || 50),
           caption: "Tonton keseruan video ini sampai habis! 🔥 Jangan lupa like dan share ya!",
           hashtags: ["#fyp", "#viral", "#trending", "#video"]
         };
@@ -159,52 +152,54 @@ class ClipGenerator {
   }
 
   // ==========================================
-  // FUNGSI BANTUAN (EKSTRAK FRAME UNTUK AI)
+  // EKSTRAK FRAME SAMPEL UNTUK AI
   // ==========================================
   async extractSampleFrames(clipPath, count = 3) {
     const frames = [];
-    // Mengambil sampel di detik 20%, 50%, dan 80% dari total durasi klip
     const timestamps = [0.2, 0.5, 0.8]; 
     
     for (let i = 0; i < count; i++) {
       const framePath = path.join(this.outputDir, `frame-temp-${Date.now()}-${i}.jpg`);
-      await new Promise((resolve, reject) => {
-        ffmpeg(clipPath)
-          .screenshots({
-            timestamps: [timestamps[i]],
-            filename: path.basename(framePath),
-            folder: path.dirname(framePath),
-            size: '720x1280'
-          })
-          .on('end', resolve)
-          .on('error', reject);
-      });
-      
-      const base64 = await fs.readFile(framePath, { encoding: 'base64' });
-      frames.push({ path: framePath, base64, index: i });
-      // Langsung hapus frame temp setelah diubah ke base64 agar HDD tidak penuh
-      await fs.unlink(framePath).catch(() => {});
+      try {
+        await new Promise((resolve, reject) => {
+          ffmpeg(clipPath)
+            .screenshots({
+              timestamps: [timestamps[i]],
+              filename: path.basename(framePath),
+              folder: path.dirname(framePath),
+              size: '720x1280'
+            })
+            .on('end', resolve)
+            .on('error', reject);
+        });
+        
+        const base64 = await fs.readFile(framePath, { encoding: 'base64' });
+        frames.push({ path: framePath, base64, index: i });
+        await fs.unlink(framePath).catch(() => {});
+      } catch (err) {
+        console.warn(`Gagal ekstrak frame sampel ${i}:`, err.message);
+      }
     }
     return frames;
   }
 
   // ==========================================
-  // FUNGSI BANTUAN (KALKULASI SKOR FYP)
+  // KALKULASI SKOR FYP
+  // FIX: Tidak perlu async karena tidak ada operasi async
   // ==========================================
-  async calculateFinalFYPScore(plan, metadata) {
-    let score = plan.fypScore;
-    if (metadata.title.length > 10) score += 2;
-    if (metadata.caption.includes('?') || metadata.caption.includes('!')) score += 2;
+  calculateFinalFYPScore(plan, metadata) {
+    let score = plan.fypScore || 50;
+    if (metadata.title && metadata.title.length > 10) score += 2;
+    if (metadata.caption && (metadata.caption.includes('?') || metadata.caption.includes('!'))) score += 2;
     if (metadata.hashtags && metadata.hashtags.length >= 5) score += 2;
     return Math.min(100, score);
   }
 
-  // Fungsi untuk membersihkan folder (Dipanggil manual jika dibutuhkan)
   async cleanup() {
     try { 
       await fs.rm(this.outputDir, { recursive: true, force: true }); 
     } catch (e) {
-      // Abaikan jika folder sedang digunakan
+      // Abaikan
     }
   }
 }
