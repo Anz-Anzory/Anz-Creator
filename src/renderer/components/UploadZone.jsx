@@ -1,10 +1,13 @@
 import React from 'react';
 import { useDropzone } from 'react-dropzone';
 
-function UploadZone({ onUpload, accept = 'video/*', children }) {
+function UploadZone({ onUpload, accept, children }) {
+  // FIX: Default accept menggunakan format react-dropzone v14
+  const defaultAccept = { 'video/*': ['.mp4', '.mkv', '.mov', '.avi', '.webm'] };
+  
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: onUpload,
-    accept: accept,
+    accept: accept || defaultAccept,
     multiple: false
   });
 
@@ -17,9 +20,9 @@ function UploadZone({ onUpload, accept = 'video/*', children }) {
       {children || (
         <div>
           {isDragActive ? (
-            <p>Drop the video here...</p>
+            <p>Drop video di sini...</p>
           ) : (
-            <p>Drag & drop video here, or click to select</p>
+            <p>Drag & drop video di sini, atau klik untuk memilih</p>
           )}
         </div>
       )}
