@@ -9,10 +9,6 @@ class GeminiService {
     this.apiKeys = apiKeys;
     this.keyManager = new GeminiKeyManager(apiKeys);
     
-    // Batas percobaan = jumlah API Key x jumlah model fallback
-    this.maxRetries = apiKeys.length * this.fallbackModels.length; 
-    
-    // FIX: Statistik penggunaan
     this._stats = {
       totalCalls: 0,
       successCalls: 0,
@@ -20,51 +16,97 @@ class GeminiService {
       lastUsedModel: null,
       lastUsedKeyIndex: null
     };
+
+    // ============================================
+    // FIX: Tracking kuota harian per key
+    // "quota exceeded" + "limit: 0" = kuota HARIAN habis (bukan rate limit per menit)
+    // ============================================
+    this._dailyQuotaExhausted = new Set();
   }
 
-  // FIX: Perbaiki nama model — gunakan model yang pasti valid
-  // Verifikasi di: https://ai.google.dev/gemini-api/docs/models
+  // Model diurutkan: paling ringan dulu (hemat kuota free tier)
   fallbackModels = [
-    'gemini-2.5-flash',
+    'gemini-2.0-flash-lite',
     'gemini-2.0-flash',
     'gemini-1.5-flash'
   ];
 
-  /**
-   * FIX: Method getStats() — sebelumnya tidak ada, dipanggil oleh VideoAnalyzer
-   */
   getStats() {
     return {
       ...this._stats,
-      keyManager: this.keyManager.getStats()
+      keyManager: this.keyManager.getStats(),
+      dailyQuotaExhaustedKeys: this._dailyQuotaExhausted.size
     };
   }
 
   /**
-   * Mengeksekusi operasi API dengan sistem rotasi ganda (Model & API Key).
+   * ============================================
+   * INTI SISTEM ROTASI — DIPERBAIKI TOTAL
+   * ============================================
+   * 
+   * Perubahan:
+   * 1. Deteksi "kuota harian habis" vs "rate limit per menit"  
+   * 2. Jika SEMUA key kuota harian habis → langsung gagal (jangan buang waktu retry)
+   * 3. Jeda tunggu mengikuti waktu dari pesan error Google
+   * 4. maxRetries lebih kecil agar tidak spam API
    */
   async executeWithRotation(operation, operationName = 'operation') {
     if (!this.apiKeys || this.apiKeys.length === 0) {
       throw new Error(`${operationName} gagal: Tidak ada API Key yang valid.`);
     }
 
+    // Cek apakah masih ada key yang kuota hariannya tersisa
+    const availableKeyCount = this.apiKeys.length - this._dailyQuotaExhausted.size;
+    if (availableKeyCount <= 0) {
+      throw new Error(
+        `${operationName} gagal: Semua ${this.apiKeys.length} API Key kehabisan kuota harian. ` +
+        `Kuota direset besok oleh Google. Solusi:\n` +
+        `1. Tambahkan API Key baru di Settings\n` +
+        `2. Tunggu hingga besok (reset setiap 24 jam)\n` +
+        `3. Upgrade ke paket berbayar di Google AI Studio`
+      );
+    }
+
+    // maxRetries lebih kecil = tidak buang kuota sia-sia
+    const maxRetries = Math.min(availableKeyCount * this.fallbackModels.length, 12);
     let attempts = 0;
     let lastError;
     let currentModelIndex = 0;
     
     this._stats.totalCalls++;
 
-    while (attempts < this.maxRetries) {
-      const { key, index: keyIndex } = this.keyManager.getCurrentKey();
+    while (attempts < maxRetries) {
+      // Skip key yang kuota hariannya habis
+      let keyData;
+      let keySearchAttempts = 0;
+      do {
+        keyData = this.keyManager.getCurrentKey();
+        if (this._dailyQuotaExhausted.has(keyData.index)) {
+          this.keyManager.rotateKey();
+          keySearchAttempts++;
+        } else {
+          break;
+        }
+      } while (keySearchAttempts < this.apiKeys.length);
+
+      // Double-check: semua key habis
+      if (keySearchAttempts >= this.apiKeys.length) {
+        throw new Error(
+          `${operationName} gagal: Semua API Key kehabisan kuota harian. ` +
+          `Tambahkan key baru atau tunggu besok.`
+        );
+      }
+
+      const { key, index: keyIndex } = keyData;
       const currentModelName = this.fallbackModels[currentModelIndex];
       
       try {
-        console.log(`[AI] ${operationName} | Key: ${keyIndex + 1}/${this.apiKeys.length} | Model: ${currentModelName}`);
+        console.log(`[AI] ${operationName} | Key: ${keyIndex + 1}/${this.apiKeys.length} | Model: ${currentModelName} | Percobaan: ${attempts + 1}/${maxRetries}`);
         
         const genAI = new GoogleGenerativeAI(key);
         const result = await operation(genAI, currentModelName);
         
-        console.log(`✅ ${operationName} - Sukses menggunakan ${currentModelName}`);
+        console.log(`✅ ${operationName} - Sukses (${currentModelName})`);
         this._stats.successCalls++;
         this._stats.lastUsedModel = currentModelName;
         this._stats.lastUsedKeyIndex = keyIndex;
@@ -74,213 +116,187 @@ class GeminiService {
         lastError = error;
         attempts++;
         
-        const errorMessage = error.message?.toLowerCase() || '';
-        const isServerBusy = errorMessage.includes('503') || errorMessage.includes('high demand') || errorMessage.includes('overloaded');
-        const isModelNotFound = errorMessage.includes('404') || errorMessage.includes('not found') || errorMessage.includes('not supported');
+        const errorMessage = error.message || '';
+        const errorLower = errorMessage.toLowerCase();
         
-        // Error 503 atau 404 — coba model berikutnya
-        if (isServerBusy || isModelNotFound) {
-          console.warn(`[!] Model ${currentModelName} gagal (${isServerBusy ? '503 Server Sibuk' : '404 Tidak Ditemukan'}).`);
+        // ========== CASE 1: KUOTA HARIAN HABIS (limit: 0) ==========
+        // Tandai key ini, langsung pindah ke key lain
+        if (this.isDailyQuotaExhausted(errorMessage)) {
+          console.warn(`🚫 Key ${keyIndex + 1} KUOTA HARIAN HABIS. Ditandai dan dilewati.`);
+          this._dailyQuotaExhausted.add(keyIndex);
+          this.keyManager.markRateLimited(keyIndex, 24 * 60 * 60 * 1000); // 24 jam
           
-          if (currentModelIndex < this.fallbackModels.length - 1) {
-            currentModelIndex++;
-            console.log(`🔄 Pindah ke model cadangan: ${this.fallbackModels[currentModelIndex]}...`);
-          } else {
-            console.warn(`[!] Semua model gagal. Mengganti API Key...`);
+          if (this._dailyQuotaExhausted.size >= this.apiKeys.length) {
+            throw new Error(
+              `Semua ${this.apiKeys.length} API Key kehabisan kuota harian. ` +
+              `Tambahkan key baru di Settings atau tunggu besok.`
+            );
+          }
+          
+          this.keyManager.rotateKey();
+          currentModelIndex = 0;
+          continue;
+        }
+        
+        // ========== CASE 2: RATE LIMIT PER MENIT (bisa ditunggu) ==========
+        if (this.isRateLimitError(error)) {
+          const waitTime = this.extractRetryAfter(error);
+          console.warn(`⏳ Key ${keyIndex + 1} rate limit. Menunggu ${Math.ceil(waitTime / 1000)} detik...`);
+          
+          this.keyManager.markRateLimited(keyIndex, waitTime);
+          
+          // Coba key lain yang belum kena limit
+          const otherAvailable = this.apiKeys.some((_, idx) => 
+            idx !== keyIndex && 
+            !this._dailyQuotaExhausted.has(idx) && 
+            !this.keyManager.rateLimitReset.has(idx)
+          );
+          
+          if (otherAvailable) {
+            console.log(`🔄 Pindah ke key lain...`);
             this.keyManager.rotateKey();
-            currentModelIndex = 0;
-            await new Promise(res => setTimeout(res, 5000));
+          } else {
+            // Semua key kena limit — tunggu sesuai waktu Google
+            console.log(`⏳ Semua key terkena limit. Menunggu ${Math.ceil(waitTime / 1000)} detik...`);
+            await this.sleep(waitTime);
+            this.keyManager.resetRateLimits();
           }
           continue;
         }
         
-        // Error 429 (Rate Limit)
-        if (this.isRateLimitError(error)) {
-          const waitTime = this.extractRetryAfter(error);
-          this.keyManager.markRateLimited(keyIndex, waitTime);
-          
-          console.warn(`[!] Key ${keyIndex + 1} terkena Rate Limit. Tunggu ${waitTime/1000} detik...`);
-          this.keyManager.rotateKey();
-          await new Promise(res => setTimeout(res, 2000)); 
-          continue;
-        } 
+        // ========== CASE 3: SERVER SIBUK (503) / MODEL TIDAK ADA (404) ==========
+        const isServerBusy = errorLower.includes('503') || errorLower.includes('overloaded') || errorLower.includes('high demand');
+        const isModelNotFound = errorLower.includes('404') || errorLower.includes('not found') || errorLower.includes('not supported');
         
-        // Error lain — langsung throw
+        if (isServerBusy || isModelNotFound) {
+          console.warn(`[!] Model ${currentModelName}: ${isServerBusy ? '503 Server Sibuk' : '404 Tidak Ada'}`);
+          
+          if (currentModelIndex < this.fallbackModels.length - 1) {
+            currentModelIndex++;
+            console.log(`🔄 Coba model: ${this.fallbackModels[currentModelIndex]}`);
+          } else {
+            this.keyManager.rotateKey();
+            currentModelIndex = 0;
+            await this.sleep(3000);
+          }
+          continue;
+        }
+        
+        // ========== CASE 4: ERROR LAIN → langsung throw ==========
+        console.error(`❌ Error tak terduga: ${errorMessage.substring(0, 200)}`);
         this._stats.failedCalls++;
         throw error;
       }
     }
 
     this._stats.failedCalls++;
-    throw new Error(`${operationName} gagal total setelah ${attempts} percobaan. Error: ${lastError?.message || 'Unknown'}`);
+    
+    const exhaustedCount = this._dailyQuotaExhausted.size;
+    let hint = '';
+    if (exhaustedCount > 0) {
+      hint = ` (${exhaustedCount}/${this.apiKeys.length} key kuota harian habis)`;
+    }
+    
+    throw new Error(
+      `${operationName} gagal setelah ${attempts} percobaan${hint}. ` +
+      `Error terakhir: ${lastError?.message?.substring(0, 150) || 'Unknown'}`
+    );
   }
 
   // ============================================
-  // FIX: Method-method berikut SEBELUMNYA TIDAK ADA
-  // Dipanggil oleh VideoAnalyzer.js — tanpa ini, halaman Editor pasti crash
+  // Deteksi kuota HARIAN habis (bukan rate limit per menit)
+  // Ciri: "limit: 0" atau "PerDayPerProject" dalam pesan error
+  // ============================================
+  isDailyQuotaExhausted(errorMessage) {
+    const msg = errorMessage.toLowerCase();
+    
+    if (msg.includes('limit: 0') || msg.includes('limit:0')) return true;
+    if (msg.includes('requestsperdayperproject')) return true;
+    if (msg.includes('quota exceeded') && msg.includes('free_tier') && msg.includes('perday')) return true;
+    
+    return false;
+  }
+
+  isRateLimitError(error) {
+    const msg = (error.message || '').toLowerCase();
+    const code = String(error.code || '');
+    const indicators = ['rate limit', 'quota exceeded', '429', 'resource_exhausted', 'too many requests'];
+    return indicators.some(i => msg.includes(i) || code.includes(i));
+  }
+
+  extractRetryAfter(error) {
+    const msg = (error.message || '').toLowerCase();
+    
+    // Ambil waktu dari Google: "Please retry in 20.218s"
+    const match = msg.match(/retry in ([\d.]+)s/);
+    if (match && match[1]) {
+      const seconds = Math.ceil(parseFloat(match[1]));
+      return Math.min((seconds + 3) * 1000, 120000); // +3 detik buffer, max 2 menit
+    }
+    
+    return 30000; // Default 30 detik
+  }
+
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // ============================================
+  // METHOD-METHOD AI
   // ============================================
 
-  /**
-   * Analisa video dari frame-frame yang diekstrak
-   */
   async analyzeVideo(frames, prompt) {
     return this.executeWithRotation(async (genAI, modelName) => {
       const model = genAI.getGenerativeModel({ model: modelName });
-      
       const imageParts = frames.map(frame => ({
-        inlineData: {
-          data: frame.base64,
-          mimeType: frame.mimeType || 'image/jpeg'
-        }
+        inlineData: { data: frame.base64, mimeType: frame.mimeType || 'image/jpeg' }
       }));
-
       const result = await model.generateContent([prompt, ...imageParts]);
       return result.response.text();
     }, 'Video Analysis');
   }
 
-  /**
-   * Generate judul viral dari hasil analisa visual
-   */
   async generateTitle(visualAnalysis) {
     return this.executeWithRotation(async (genAI, modelName) => {
       const model = genAI.getGenerativeModel({ model: modelName });
-      
-      const prompt = `Berdasarkan analisa visual berikut, buatkan 5 opsi judul yang viral dan menarik untuk video pendek (TikTok/Reels/Shorts). Setiap judul maksimal 60 karakter.
-
-Analisa Visual:
-${visualAnalysis}
-
-Format jawaban (1 judul per baris, diberi nomor):
-1. Judul pertama
-2. Judul kedua
-...dst`;
-
+      const prompt = `Buatkan 5 judul viral untuk video pendek (max 60 karakter per judul).
+Analisa: ${visualAnalysis}
+Format: 1 judul per baris, diberi nomor.`;
       const result = await model.generateContent(prompt);
       return result.response.text();
     }, 'Generate Title');
   }
 
-  /**
-   * Generate caption yang engaging
-   */
   async generateCaption(visualAnalysis, options = {}) {
     return this.executeWithRotation(async (genAI, modelName) => {
       const model = genAI.getGenerativeModel({ model: modelName });
-      
-      const prompt = `Buatkan caption viral untuk video pendek berdasarkan analisa berikut.
-
-Jenis Konten: ${options.contentType || 'entertainment'}
-Target Audiens: ${options.audience || 'general'}
-
-Analisa Visual:
-${visualAnalysis}
-
-Buat caption yang:
-- Dimulai dengan hook yang kuat (pertanyaan/pernyataan mengejutkan)
-- Menggunakan emoji secukupnya
-- Mendorong engagement (like, comment, share)
-- Maksimal 300 karakter`;
-
+      const prompt = `Buatkan caption viral (max 300 karakter, ada hook + emoji).
+Jenis: ${options.contentType || 'entertainment'} | Audiens: ${options.audience || 'general'}
+Analisa: ${visualAnalysis}`;
       const result = await model.generateContent(prompt);
       return result.response.text();
     }, 'Generate Caption');
   }
 
-  /**
-   * Generate hashtag yang relevan dan trending
-   */
   async generateHashtags(visualAnalysis, count = 15) {
     return this.executeWithRotation(async (genAI, modelName) => {
       const model = genAI.getGenerativeModel({ model: modelName });
-      
-      const prompt = `Berdasarkan analisa visual berikut, buatkan ${count} hashtag yang relevan dan berpotensi viral.
-
-Analisa Visual:
-${visualAnalysis}
-
-Aturan:
-- Campurkan hashtag populer tinggi (jutaan views) dan niche spesifik
-- Semua diawali dengan #
-- Pisahkan dengan spasi
-- Jangan gunakan hashtag yang terlalu generik seperti #fyp saja
-
-Format: #hashtag1 #hashtag2 #hashtag3 ...`;
-
+      const prompt = `Buatkan ${count} hashtag viral. Format: #tag1 #tag2 #tag3
+Analisa: ${visualAnalysis}`;
       const result = await model.generateContent(prompt);
       return result.response.text();
     }, 'Generate Hashtags');
   }
 
-  /**
-   * Prediksi skor FYP (potensi viral)
-   */
   async predictFYPScore(visualAnalysis, metadata) {
     return this.executeWithRotation(async (genAI, modelName) => {
       const model = genAI.getGenerativeModel({ model: modelName });
-      
-      const prompt = `Analisa potensi viral video ini dan berikan skor FYP (For You Page) dari 0-100.
-
-Analisa Visual:
-${visualAnalysis}
-
-Metadata Video:
-- Durasi: ${metadata?.duration || 'unknown'}s
-- Resolusi: ${metadata?.width || '?'}x${metadata?.height || '?'}
-- FPS: ${metadata?.fps || '?'}
-
-Evaluasi aspek berikut:
-1. Hook Strength (0-100): Seberapa kuat 3 detik pertama menarik perhatian
-2. Visual Appeal (0-100): Kualitas visual, warna, komposisi
-3. Content Value (0-100): Nilai edukasi/hiburan/emosi
-4. Shareability (0-100): Seberapa besar kemungkinan di-share
-5. Trend Alignment (0-100): Kesesuaian dengan tren terkini
-
-JAWAB HANYA DALAM FORMAT JSON VALID (tanpa markdown code block):
-{
-  "score": 85,
-  "reasoning": "Penjelasan singkat kenapa skornya segitu",
-  "breakdown": {
-    "hookStrength": 80,
-    "visualAppeal": 90,
-    "contentValue": 85,
-    "shareability": 80,
-    "trendAlignment": 75
-  },
-  "suggestions": ["Saran 1", "Saran 2", "Saran 3"]
-}`;
-
+      const prompt = `Skor viral 0-100. Durasi:${metadata?.duration||'?'}s Resolusi:${metadata?.width||'?'}x${metadata?.height||'?'}
+Analisa: ${visualAnalysis}
+JAWAB JSON SAJA: {"score":85,"reasoning":"alasan","suggestions":["saran"]}`;
       const result = await model.generateContent(prompt);
       return result.response.text();
     }, 'FYP Score Prediction');
-  }
-
-  // ============================================
-  // UTILITY METHODS
-  // ============================================
-
-  isRateLimitError(error) {
-    const rateLimitIndicators = [
-      'rate limit', 'quota exceeded', '429', 'resource_exhausted', 'too many requests'
-    ];
-    const errorMessage = error.message?.toLowerCase() || '';
-    const errorCode = String(error.code || '');
-    
-    return rateLimitIndicators.some(indicator => 
-      errorMessage.includes(indicator) || errorCode.includes(indicator)
-    );
-  }
-
-  extractRetryAfter(error) {
-    let waitTime = 15000;
-    const errorMessage = error.message?.toLowerCase() || '';
-    
-    const match = errorMessage.match(/retry in ([\d.]+)s/);
-    if (match && match[1]) {
-      waitTime = Math.ceil(parseFloat(match[1])) * 1000;
-    }
-    
-    return Math.min(waitTime, 60000);
   }
 }
 
