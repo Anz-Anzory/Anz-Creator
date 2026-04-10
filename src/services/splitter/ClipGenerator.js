@@ -32,13 +32,23 @@ class ClipGenerator {
         });
 
         // 2. Generate Metadata via AI (3-in-1 JSON)
+        // FIX: Jika AI gagal (kuota habis), gunakan metadata fallback
+        //       agar klip tetap bisa dihasilkan tanpa AI
         if (options.onProgress) {
           options.onProgress({
             current: i + 1, total: clipPlan.length, subPercent: 100,
             taskName: `Menganalisa AI Klip ${i + 1}/${clipPlan.length}...`
           });
         }
-        const metadata = await this.generateMetadata(clipPath, plan);
+        
+        let metadata;
+        try {
+          metadata = await this.generateMetadata(clipPath, plan);
+        } catch (aiError) {
+          console.warn(`⚠️ AI Metadata gagal untuk klip ${i + 1}: ${aiError.message}`);
+          console.warn(`📝 Menggunakan metadata offline (tanpa AI)...`);
+          metadata = this.generateOfflineMetadata(plan, i + 1);
+        }
         
         // 3. Ekstrak 3 Thumbnail Terbaik
         const thumbnails = await this.thumbnailExtractor.extractThumbnails(clipPath, plan, { count: 3 });
@@ -193,6 +203,52 @@ class ClipGenerator {
     if (metadata.caption && (metadata.caption.includes('?') || metadata.caption.includes('!'))) score += 2;
     if (metadata.hashtags && metadata.hashtags.length >= 5) score += 2;
     return Math.min(100, score);
+  }
+
+  // ==========================================
+  // FIX: FALLBACK OFFLINE METADATA
+  // Digunakan saat semua API Key kehabisan kuota
+  // Klip tetap bisa dihasilkan tanpa AI
+  // ==========================================
+  generateOfflineMetadata(plan, sequence) {
+    const contentType = plan.contentType || 'entertainment';
+    const duration = Math.round(plan.duration || 30);
+    const score = plan.fypScore || 50;
+    
+    // Template berdasarkan tipe konten
+    const templates = {
+      educational: {
+        titles: ['Tips Bermanfaat', 'Fakta Menarik', 'Tahukah Kamu?', 'Info Penting'],
+        captions: ['Simak info bermanfaat ini sampai habis! 💡 Save untuk nanti!', 'Banyak yang belum tahu ini! 🤯 Share ke teman kalian!'],
+        tags: ['#edukasi', '#fakta', '#tipsbermanfaat', '#infomenarik', '#tahukahkamu']
+      },
+      comedy: {
+        titles: ['Ngakak Parah', 'Kocak Banget', 'Auto Ketawa', 'Lucu Banget'],
+        captions: ['Jangan ditahan ketawanya! 😂🤣 Tag temen kalian!', 'Auto ngakak liat ini! 🤣 Share ke yang butuh ketawa!'],
+        tags: ['#lucu', '#ngakak', '#kocak', '#comedy', '#humor']
+      },
+      entertainment: {
+        titles: ['Wajib Tonton', 'Seru Banget', 'Auto FYP', 'Keren Parah'],
+        captions: ['Tonton sampai habis! 🔥 Kalian setuju?', 'Ini sih keren banget! ✨ Like kalau setuju!'],
+        tags: ['#fyp', '#viral', '#trending', '#konten', '#seru']
+      },
+      emotional: {
+        titles: ['Menyentuh Hati', 'Bikin Baper', 'Mengharukan', 'Bikin Terharu'],
+        captions: ['Siapa yang relate? 🥺 Ceritain pengalaman kalian di komentar!', 'Ini bikin hati adem 💙 Share ke orang tersayang!'],
+        tags: ['#menyentuhhati', '#baper', '#motivasi', '#inspirasi', '#quotes']
+      }
+    };
+    
+    const template = templates[contentType] || templates.entertainment;
+    const titleIdx = (sequence - 1) % template.titles.length;
+    const captionIdx = (sequence - 1) % template.captions.length;
+    
+    return {
+      title: `${template.titles[titleIdx]} Part ${sequence}`,
+      caption: template.captions[captionIdx],
+      hashtags: [...template.tags, '#part' + sequence, '#video', '#content', '#creator', '#shorts'],
+      _offlineGenerated: true // Penanda bahwa ini bukan dari AI
+    };
   }
 
   async cleanup() {
