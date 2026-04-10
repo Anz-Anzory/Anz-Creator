@@ -8,6 +8,7 @@ function Settings() {
 
   useEffect(() => {
     loadKeyStatus();
+    loadExistingKeys();
   }, []);
 
   const loadKeyStatus = async () => {
@@ -18,6 +19,17 @@ function Settings() {
       }
     } catch (err) {
       console.error('Gagal memuat status key:', err);
+    }
+  };
+
+  const loadExistingKeys = async () => {
+    try {
+      const result = await window.electron.ipcRenderer.invoke('get-saved-keys');
+      if (result.success && result.keys) {
+        setApiKeys(result.keys);
+      }
+    } catch (err) {
+      console.error('Gagal memuat key tersimpan:', err);
     }
   };
 
