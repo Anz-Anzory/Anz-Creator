@@ -5,12 +5,24 @@ const crypto = require('crypto');
 class KeyStorage {
   constructor(filePath) {
     this.filePath = filePath || path.join(require('os').homedir(), '.anz-video-publisher', 'api-keys.enc');
+    this.saltPath = path.join(path.dirname(this.filePath), '.install-salt');
     this.encryptionKey = this.getMachineKey();
   }
 
   getMachineKey() {
     const machineId = require('os').hostname() + require('os').userInfo().username;
-    return crypto.createHash('sha256').update(machineId).digest();
+    
+    // Tambahkan salt unik per-instalasi agar tidak bisa ditebak
+    let salt;
+    try {
+      salt = require('fs').readFileSync(this.saltPath, 'utf-8');
+    } catch {
+      salt = crypto.randomBytes(32).toString('hex');
+      require('fs').mkdirSync(path.dirname(this.saltPath), { recursive: true });
+      require('fs').writeFileSync(this.saltPath, salt, 'utf-8');
+    }
+    
+    return crypto.createHash('sha256').update(machineId + salt).digest();
   }
 
   async saveKeys(apiKeys) {
