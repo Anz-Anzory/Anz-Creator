@@ -21,6 +21,8 @@ async function processVideo(inputVideo, options = {}) {
   }
   fs.mkdirSync(tempBasePath, { recursive: true });
 
+  try {
+
   const framesDir = path.join(tempBasePath, "frames");
   const croppedDir = path.join(tempBasePath, "cropped");
   const cleanDir = path.join(tempBasePath, "clean");
@@ -141,9 +143,19 @@ async function processVideo(inputVideo, options = {}) {
   console.log("✅ SELESAI: " + outputVideoPath);
   
   return { 
-    finalPath: outputVideoPath, 
-    watermarksRemoved: detectedAreas.length 
-  };
+      finalPath: outputVideoPath, 
+      watermarksRemoved: detectedAreas.length 
+    };
+  } finally {
+    // Cleanup temp files
+    try {
+      if (fs.existsSync(tempBasePath)) {
+        fs.rmSync(tempBasePath, { recursive: true, force: true });
+      }
+    } catch (e) {
+      console.warn('⚠️ Gagal membersihkan temp files:', e.message);
+    }
+  }
 }
 
 module.exports = {
