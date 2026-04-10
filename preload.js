@@ -11,7 +11,8 @@ const validChannels = [
   'get-video-info',
   'select-output-dir',
   'split-progress',
-  'save-file'
+  'save-file',
+  'open-external'
 ];
 
 contextBridge.exposeInMainWorld('electron', {
