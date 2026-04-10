@@ -287,6 +287,19 @@ ipcMain.handle('remove-watermark', async (event, { videoPath, options }) => {
 
 // Handler untuk tombol Download/Simpan Video
 ipcMain.handle('save-file', async (event, { sourcePath, defaultName }) => {
+  // Validasi: sourcePath harus di temp directory atau output directory
+  const os = require('os');
+  const normalizedSource = path.resolve(sourcePath);
+  const allowedPrefixes = [
+    path.resolve(os.tmpdir()),
+    path.resolve(path.join(os.tmpdir(), 'generated-clips'))
+  ];
+  
+  const isAllowed = allowedPrefixes.some(prefix => normalizedSource.startsWith(prefix));
+  if (!isAllowed) {
+    return { success: false, error: 'Path tidak diizinkan' };
+  }
+  
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     defaultPath: defaultName,
     filters: [{ name: 'Video MP4', extensions: ['mp4'] }]
