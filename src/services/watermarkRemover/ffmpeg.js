@@ -62,16 +62,27 @@ function overlayBack(frameInput, cleanedInput, outputPath, cfg) {
 /**
  * Build video dari frame-frame yang sudah dibersihkan
  */
-function buildVideo(framesDir, outputPath, fps = 30) {
+function buildVideo(framesDir, outputPath, fps = 30, originalVideo = null) {
   return new Promise((resolve, reject) => {
-    ffmpeg(path.join(framesDir, 'frame_%04d.png'))
-      .inputOptions([`-framerate ${fps}`])
-      .outputOptions([
-        '-c:v libx264',
-        '-crf 23',
-        '-preset fast',
-        '-pix_fmt yuv420p'
-      ])
+    let cmd = ffmpeg(path.join(framesDir, 'frame_%04d.png'))
+      .inputOptions([`-framerate ${fps}`]);
+    
+    if (originalVideo) {
+      cmd = cmd.input(originalVideo);
+    }
+    
+    const outOpts = [
+      '-c:v libx264',
+      '-crf 23',
+      '-preset fast',
+      '-pix_fmt yuv420p'
+    ];
+    
+    if (originalVideo) {
+      outOpts.push('-c:a aac', '-b:a 192k', '-shortest');
+    }
+    
+    cmd.outputOptions(outOpts)
       .output(outputPath)
       .on('end', () => {
         console.log(`✅ Video berhasil dibuild: ${outputPath}`);
