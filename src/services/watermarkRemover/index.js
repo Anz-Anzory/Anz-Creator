@@ -131,26 +131,32 @@ async function processVideo(inputVideo, options = {}) {
     }
 
     // Pastikan frame final tersedia — SELALU overwrite dengan hasil terbaru
-    const finalFrame = path.join(finalDir, frame);
-    fs.copyFileSync(currentFramePath, finalFrame);
-    }
-  }
+      const finalFrame = path.join(finalDir, frame);
+      fs.copyFileSync(currentFramePath, finalFrame);
+    } // Menutup loop "for (let i = 0...)"
 
-  // Build video dari frame-frame yang sudah dibersihkan
-  const outputVideoPath = options.outputPath || inputVideo.replace(/(\.\w+)$/, '_no-watermark$1');
-  await buildVideo(finalDir, outputVideoPath, 1, inputVideo);
+    // Build video dari frame-frame yang sudah dibersihkan
+    const outputVideoPath = options.outputPath || inputVideo.replace(/(\.\w+)$/, '_no-watermark$1');
+    await buildVideo(finalDir, outputVideoPath, 1, inputVideo);
 
-  console.log("✅ SELESAI: " + outputVideoPath);
-  
-  return { 
+    console.log("✅ SELESAI: " + outputVideoPath);
+    
+    return { 
       finalPath: outputVideoPath, 
       watermarksRemoved: detectedAreas.length 
     };
+
+  } catch (error) {
+    // Menangkap error utama agar aplikasi tidak crash
+    console.error("❌ Terjadi kesalahan pada proses utama:", error.message);
+    throw error; // Lempar kembali ke pemanggil fungsi agar bisa ditangani UI
+    
   } finally {
-    // Cleanup temp files
+    // Cleanup temp files selalu dieksekusi baik sukses maupun gagal
     try {
       if (fs.existsSync(tempBasePath)) {
         fs.rmSync(tempBasePath, { recursive: true, force: true });
+        console.log("🧹 Folder temporary berhasil dibersihkan.");
       }
     } catch (e) {
       console.warn('⚠️ Gagal membersihkan temp files:', e.message);
