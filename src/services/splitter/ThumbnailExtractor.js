@@ -30,11 +30,18 @@ class ThumbnailExtractor {
     });
     
     for (let i = 0; i < positions.length; i++) {
-      // ... (sama seperti sebelumnya, tapi panggil captureFrame dengan isPortrait)
-        await this.captureFrame(clipPath, timestamp, outputPath, isPortrait);
-      // ...
+      try { // <--- TAMBAHKAN PEMBUKA TRY DI SINI
+        const timestamp = positions[i];
         
-        // FIX: Verifikasi file BENAR-BENAR ada setelah capture
+        // Buat nama file unik berdasarkan nama clip dan index
+        const baseName = path.basename(clipPath, path.extname(clipPath));
+        const thumbName = `${baseName}_thumb_${i + 1}.jpg`;
+        const outputPath = path.join(this.tempDir, thumbName);
+
+        // Ekstrak frame
+        await this.captureFrame(clipPath, timestamp, outputPath, isPortrait);
+        
+        // Verifikasi file BENAR-BENAR ada setelah capture
         if (!fsSync.existsSync(outputPath)) {
           console.warn(`⚠️ Thumbnail ${thumbName} tidak terbuat, skip`);
           continue;
@@ -56,8 +63,10 @@ class ThumbnailExtractor {
           qualityScore,
           rank: i + 1
         });
-      } catch (err) {
-        console.warn(`Gagal ekstrak thumbnail ${i} di ${timestamp}s:`, err.message);
+      } catch (err) { // <--- SEKARANG CATCH INI PUNYA PASANGAN
+        // Gunakan positions[i] di pesan error karena jika gagal di awal, 
+        // variabel timestamp mungkin belum terbaca dengan baik
+        console.warn(`Gagal ekstrak thumbnail ${i} di ${positions[i]}s:`, err.message);
       }
     }
     
