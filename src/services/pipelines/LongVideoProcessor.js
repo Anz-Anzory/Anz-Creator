@@ -97,18 +97,21 @@ class LongVideoProcessor {
       throw error;
     } finally {
       try { await this.detector.cleanup(); } catch (e) {}
-      // Cleanup temp frame samples dari generator (bukan klip hasil — user masih butuh)
-      // ClipGenerator menyimpan frame-sample-* di outputDir yang bisa dibersihkan
+      // Cleanup temp frame samples dari generator
       try {
         const genDir = this.generator.outputDir;
         const fsSync = require('fs');
+        const path = require('path'); // FIX: Tambahkan module 'path' di sini
+        
         if (fsSync.existsSync(genDir)) {
           const tempFiles = fsSync.readdirSync(genDir).filter(f => f.startsWith('frame-sample-'));
           for (const f of tempFiles) {
-            fsSync.unlinkSync(path.join(genDir, f));
+            fsSync.unlinkSync(path.join(genDir, f)); 
           }
         }
       } catch (e) {}
-    }
+    } // Menutup blok finally
+  } // Menutup fungsi async process()
+} // Menutup class LongVideoProcessor
 
 module.exports = LongVideoProcessor;
