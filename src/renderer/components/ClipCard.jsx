@@ -1,13 +1,25 @@
 import React, { useState } from 'react';
 
-// FIX: Helper untuk convert Windows path ke media:// URL yang valid
-// Windows path: C:\Users\SALSA_~1\AppData\...\file.jpg
-// Media URL:    media://C:/Users/SALSA_~1/AppData/.../file.jpg
+// ✅ FIX TOTAL: pakai file:// + handling aman
 function toMediaUrl(filePath) {
   if (!filePath) return '';
-  // Ganti backslash → forward slash agar valid sebagai URL
-  const normalized = filePath.replace(/\\/g, '/');
-  return `media://${normalized}`;
+
+  // Normalisasi path Windows → URL
+  let normalized = filePath.replace(/\\/g, '/');
+
+  // Kalau sudah ada file://, jangan dobel
+  if (normalized.startsWith('file://')) {
+    return normalized;
+  }
+
+  // Pastikan ada drive (C:, D:, dll)
+  if (!normalized.includes(':')) {
+    console.warn('Invalid path:', normalized);
+    return '';
+  }
+
+  // FIX utama
+  return `file:///${normalized}`;
 }
 
 function ClipCard({ clip }) {
@@ -27,6 +39,7 @@ function ClipCard({ clip }) {
         sourcePath: clip.videoPath,
         defaultName: clip.filename
       });
+
       if (result.success) {
         alert('✅ Video berhasil disimpan!');
       }
@@ -35,52 +48,133 @@ function ClipCard({ clip }) {
     }
   };
 
+  const videoSrc = toMediaUrl(clip.videoPath);
+
   return (
     <div className="clip-card">
-      <div className="clip-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: 'rgba(0,0,0,0.2)' }}>
+      <div
+        className="clip-header"
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '0.75rem',
+          background: 'rgba(0,0,0,0.2)'
+        }}
+      >
         <span>#{clip.sequence}</span>
-        <span className="fyp-score" style={{ fontSize: '1rem' }}>🔥 {clip.metadata?.fypScore || 0}/100</span>
+        <span className="fyp-score" style={{ fontSize: '1rem' }}>
+          🔥 {clip.metadata?.fypScore || 0}/100
+        </span>
       </div>
-      
-      <video src={toMediaUrl(clip.videoPath)} controls style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
-      
+
+      {/* ✅ VIDEO FIX */}
+      {videoSrc ? (
+        <video
+          src={videoSrc}
+          controls
+          style={{ width: '100%', height: '200px', objectFit: 'cover' }}
+        />
+      ) : (
+        <div style={{ padding: '1rem', color: 'orange' }}>
+          ⚠️ Video belum tersedia
+        </div>
+      )}
+
       <div className="clip-meta">
         <h4>{clip.metadata?.title || 'Untitled'}</h4>
+
         <p style={{ fontSize: '0.85rem', opacity: 0.7, marginTop: '0.5rem' }}>
-          {Math.round(clip.duration)}s | {clip.metadata?.contentType || 'general'}
+          {Math.round(clip.duration)}s |{' '}
+          {clip.metadata?.contentType || 'general'}
         </p>
-        
+
+        {/* ✅ THUMBNAIL FIX */}
         <div className="thumbnails">
-          {clip.thumbnails?.map((thumb, tidx) => (
-            <img key={tidx} src={toMediaUrl(thumb.path)} alt={`Thumbnail ${tidx + 1}`} 
-                 className={thumb.rank === 1 ? 'best' : ''} 
-                 title={`Kualitas: ${thumb.qualityScore}`} />
-          ))}
+          {clip.thumbnails?.map((thumb, tidx) => {
+            const thumbSrc = toMediaUrl(thumb.path);
+
+            return thumbSrc ? (
+              <img
+                key={tidx}
+                src={thumbSrc}
+                alt={`Thumbnail ${tidx + 1}`}
+                className={thumb.rank === 1 ? 'best' : ''}
+                title={`Kualitas: ${thumb.qualityScore}`}
+              />
+            ) : (
+              <div key={tidx} style={{ fontSize: '0.7rem', color: 'gray' }}>
+                ❌ Thumbnail error
+              </div>
+            );
+          })}
         </div>
-        
-        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-          <button onClick={() => setShowMetadata(!showMetadata)} style={{ flex: 1 }}>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '0.5rem',
+            marginTop: '1rem'
+          }}
+        >
+          <button
+            onClick={() => setShowMetadata(!showMetadata)}
+            style={{ flex: 1 }}
+          >
             {showMetadata ? 'Tutup' : 'Lihat'} Data
           </button>
-          <button onClick={handleDownload} className="btn-primary" style={{ flex: 1, background: '#10b981' }}>
+
+          <button
+            onClick={handleDownload}
+            className="btn-primary"
+            style={{ flex: 1, background: '#10b981' }}
+          >
             💾 Simpan Video
           </button>
         </div>
-        
+
         {showMetadata && (
           <div style={{ marginTop: '1rem' }}>
-            <textarea value={clip.metadata?.caption || ''} readOnly 
-                      style={{ fontSize: '0.8rem', marginBottom: '0.5rem', width: '100%' }} />
+            <textarea
+              value={clip.metadata?.caption || ''}
+              readOnly
+              style={{
+                fontSize: '0.8rem',
+                marginBottom: '0.5rem',
+                width: '100%'
+              }}
+            />
+
             <p className="hashtags" style={{ fontSize: '0.75rem' }}>
               {clip.metadata?.hashtags?.join(' ') || ''}
             </p>
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-              <button onClick={() => navigator.clipboard.writeText(clip.metadata?.caption || '')} 
-                      style={{ fontSize: '0.75rem' }}>
+
+            <div
+              style={{
+                display: 'flex',
+                gap: '0.5rem',
+                marginTop: '0.5rem'
+              }}
+            >
+              <button
+                onClick={() =>
+                  navigator.clipboard.writeText(
+                    clip.metadata?.caption || ''
+                  )
+                }
+                style={{ fontSize: '0.75rem' }}
+              >
                 📋 Copy Caption
               </button>
-              <button onClick={() => navigator.clipboard.writeText(clip.metadata?.hashtags?.join(' ') || '')} 
-                      style={{ fontSize: '0.75rem' }}>
+
+              <button
+                onClick={() =>
+                  navigator.clipboard.writeText(
+                    clip.metadata?.hashtags?.join(' ') || ''
+                  )
+                }
+                style={{ fontSize: '0.75rem' }}
+              >
                 📋 Copy Hashtags
               </button>
             </div>
